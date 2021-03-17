@@ -20,10 +20,11 @@
 #define PAGE_MASK (~(unsigned)(0x1000 - 1))
 #define PROT_RW (PROT_READ|PROT_WRITE|PROT_EXEC)
 
-
-void* get_user(uint32_t ptr);
-
 typedef int32_t (*syscall_t)();
+
+static void* get_user(uint32_t ptr) {
+	return (void*)(ptr + (config.segment ? BASE : 0));
+}
 
 static int32_t sys_write(uint32_t buf, size_t len) {
 	void* buf_ptr = get_user(buf);
@@ -95,12 +96,12 @@ static int32_t sys_swap_frontbuffer(uint32_t buffer) {
 
 static int32_t sys_read(int fd, uint32_t buf, uint32_t count) {
 	void* buf_ptr = get_user(buf);
+
 	int ret = read(fd, buf_ptr, count);
 
 	if (config.strace)
 		fprintf(stderr, "read(%d, %p, %u) = %d (%m)\n", fd, buf_ptr,
-			count,
-			ret);
+			count, ret);
 
 	if (ret < 0) {
 		switch (ret) {
@@ -122,16 +123,7 @@ static uint32_t sys_sbrk(int32_t inc) {
 		inc = 0;
 
 	uint32_t out = k_state.brk;
-
 	k_state.brk += inc;
-
-	uint32_t next = align_up(out);
-	if (k_state.brk >= next) {
-		void* p = mmap((void*)next, k_state.brk - next + 1, PROT_RW,
-			       MAP_PRIVATE|MAP_ANON, -1, 0);
-		if (p == MAP_FAILED)
-			err(1, "mmap");
-	}
 
 	if (config.strace)
 		fprintf(stderr, "sbrk(%d) = %#x\n", inc, out);
@@ -216,4 +208,3 @@ int32_t syscall_dispatch(uint32_t sysnr, uint32_t* args) {
 
 	return syscalls[sysnr](args[0], args[1], args[2], args[3]);
 }
-

@@ -8,6 +8,13 @@
 #define VIDEO_GRAPHIC	0
 #define VIDEO_TEXT	1
 
+#define XSTR(S) STR(S)
+#define STR(S) #S
+
+#define USER_ESP 0x20000
+#define BASE 65536
+#define LIMIT 256
+
 struct k_state_t {
 	pthread_mutex_t lock;
 	int video_mode;
@@ -28,7 +35,6 @@ struct config_t {
 	int segment;
 };
 
-
 extern struct k_state_t k_state;
 extern struct config_t config;
 
@@ -41,5 +47,8 @@ static inline uint32_t align_up(uint32_t ptr) {
 	return (ptr + 0xfff) & ~(uint32_t)0xfff;
 }
 
+SDL_Renderer* init_window(void);
+void update_inputs();
+void update_renderer(SDL_Renderer* renderer);
 
 #endif
