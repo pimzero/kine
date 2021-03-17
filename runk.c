@@ -84,18 +84,21 @@ static void sigsys_handler(int n, siginfo_t* siginfo, void* ucontext) {
 		syscall_dispatch(siginfo->si_syscall, args);
 }
 
+static void readat(int fd, size_t off, void* buf, size_t count) {
+	if (lseek(fd, off, SEEK_SET) < 0)
+		err(1, "lseek");
+	if (read(fd, buf, count) < (int)count)
+		err(1, "read");
+}
+
 static entry_t load_elf(const char* fname) {
 	int fd = open(fname, O_RDONLY);
 	if (fd < 0)
 		err(1, "open");
 
-	struct stat st;
-	if (fstat(fd, &st) < 0)
-		err(1, "fstat");
-
-	Elf32_Ehdr* ehdr = mmap(0, st.st_size, PROT_RW, MAP_PRIVATE, fd, 0);
-	if (ehdr == MAP_FAILED)
-		err(1, "mmap");
+	Elf32_Ehdr ehdr;
+	if (read(fd, &ehdr, sizeof(ehdr)) < (int)sizeof(ehdr))
+		err(1, "read");
 
 	Elf32_Ehdr sig = {
 		.e_ident = {
@@ -106,7 +109,7 @@ static entry_t load_elf(const char* fname) {
 		.e_machine = EM_386,
 		.e_version = EV_CURRENT,
 	};
-	if (memcmp(ehdr, &sig, offsetof(Elf32_Ehdr, e_entry)))
+	if (memcmp(&ehdr, &sig, offsetof(Elf32_Ehdr, e_entry)))
 		errx(1, "invalid file \"%s\"", fname);
 
 	void* t = mmap((void*)BASE, LIMIT * 4096, PROT_RW,
@@ -114,39 +117,49 @@ static entry_t load_elf(const char* fname) {
 	if (!t)
 		err(1, "mmap");
 
-	Elf32_Phdr* phdrs = ((void*)ehdr) + ehdr->e_phoff;
-	for (size_t i = 0; i < ehdr->e_phnum; i++) {
-		if (phdrs[i].p_type != PT_LOAD)
+	for (size_t i = 0; i < ehdr.e_phnum; i++) {
+		Elf32_Phdr phdr;
+		readat(fd, ehdr.e_phoff + i * sizeof(phdr), &phdr,
+		       sizeof(phdr));
+
+		if (phdr.p_type != PT_LOAD)
 			continue;
 
-		if (lseek(fd, phdrs[i].p_offset, SEEK_SET) < 0)
-			err(1, "lseek");
+		readat(fd, phdr.p_offset,
+		       (config.segment ? t : 0) + phdr.p_vaddr, phdr.p_filesz);
 
-		if (read(fd, (config.segment ? t : 0) + phdrs[i].p_vaddr, phdrs[i].p_filesz) < 0)
-			err(1, "read");
+		if (phdr.p_vaddr + phdr.p_memsz > k_state.brk)
+			k_state.brk = phdr.p_vaddr + phdr.p_memsz + 512;
 
-		lock();
-
-		if (phdrs[i].p_vaddr + phdrs[i].p_memsz > k_state.brk)
-			k_state.brk = phdrs[i].p_vaddr + phdrs[i].p_memsz + 512;
-
-		unlock();
-
-		if (phdrs[i].p_flags & PF_X)
-			if (set_syscall_user_dispatch((void*)k_state.brk, (void*)-1) < 0)
+		if (phdr.p_flags & PF_X) {
+			if (set_syscall_user_dispatch((void*)k_state.brk,
+			    (void*)-1) < 0)
 				err(1, "set_syscall_user_dispatch");
+		}
 	}
-
-	void* entry = (void*)ehdr->e_entry;
-
-	if (munmap(ehdr, st.st_size) < 0)
-		err(1, "munmap");
 
 	if (config.segment) {
 		k_state.brk = 0x20000;
 	}
 
-	return entry;
+	close(fd);
+
+	return (void*)ehdr.e_entry;
+}
+
+static void set_ldt_entry(unsigned nr, unsigned content,
+			  unsigned read_exec_only) {
+	struct user_desc ldt_entry = {
+		.entry_number = nr,
+		.base_addr = BASE,
+		.limit = LIMIT,
+		.limit_in_pages = 1,
+		.seg_32bit = 1,
+		.contents = content,
+		.read_exec_only = read_exec_only,
+	};
+	if (modify_ldt(0x11, &ldt_entry, sizeof(ldt_entry)) < 0)
+		err(1, "modify_ldt");
 }
 
 static void* k_thread(void* fname) {
@@ -174,29 +187,8 @@ static void* k_thread(void* fname) {
 	if (!config.segment) {
 		entry();
 	} else {
-		struct user_desc ldt_entry = {
-			.entry_number = 1,
-			.base_addr = BASE,
-			.limit = LIMIT,
-			.limit_in_pages = 1,
-			.seg_32bit = 1,
-			.contents = 2,
-			.read_exec_only = 1,
-
-		};
-		if (modify_ldt(0x11, &ldt_entry, sizeof(ldt_entry)) < 0)
-			err(1, "modify_ldt");
-
-		ldt_entry.entry_number = 2;
-		ldt_entry.contents = 0;
-		ldt_entry.base_addr = BASE;
-		ldt_entry.limit = LIMIT;
-		ldt_entry.limit_in_pages = 1;
-		ldt_entry.seg_32bit = 1;
-		ldt_entry.read_exec_only = 0;
-
-		if (modify_ldt(0x11, &ldt_entry, sizeof(ldt_entry)) < 0)
-			err(1, "modify_ldt");
+		set_ldt_entry(1, 2, 1);
+		set_ldt_entry(2, 0, 0);
 
 		__asm__ volatile(
 		"pushl $15\n\t"
