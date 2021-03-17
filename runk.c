@@ -25,6 +25,10 @@
 
 #define PROT_RWX (PROT_READ|PROT_WRITE|PROT_EXEC)
 
+#define USER_ESP 0x90000
+#define BASE 65536
+#define LIMIT 10240
+
 typedef void (*entry_t)(void);
 int32_t syscall_dispatch(uint32_t sysnr, uint32_t* args);
 
@@ -36,6 +40,10 @@ struct k_state_t k_state = {
 
 struct config_t config = {
 	.path = ".",
+	.base = BASE,
+	.limit = LIMIT,
+	.sp = USER_ESP,
+	.brk = USER_ESP,
 };
 
 void lock(void) {
@@ -107,7 +115,7 @@ static entry_t load_elf(const char* fname) {
 	if (memcmp(&ehdr, &sig, offsetof(Elf32_Ehdr, e_entry)))
 		errx(1, "invalid file \"%s\"", fname);
 
-	void* t = mmap((void*)BASE, LIMIT * 4096, PROT_RWX,
+	void* t = mmap((void*)config.base, config.limit * 4096, PROT_RWX,
 		       MAP_PRIVATE|MAP_FIXED|MAP_ANON, -1, 0);
 	if (!t)
 		err(1, "mmap");
@@ -124,9 +132,9 @@ static entry_t load_elf(const char* fname) {
 
 	}
 
-	k_state.brk = USER_ESP;
+	k_state.brk = config.brk;
 
-	if (set_syscall_user_dispatch((void*)BASE + LIMIT * 4096 ,
+	if (set_syscall_user_dispatch((void*)config.base + config.limit * 4096,
 				      (void*)-1) < 0)
 		err(1, "set_syscall_user_dispatch");
 
@@ -139,8 +147,8 @@ static void set_ldt_entry(unsigned nr, unsigned content,
 			  unsigned read_exec_only) {
 	struct user_desc ldt_entry = {
 		.entry_number = nr,
-		.base_addr = BASE,
-		.limit = LIMIT,
+		.base_addr = config.base,
+		.limit = config.limit,
 		.limit_in_pages = 1,
 		.seg_32bit = 1,
 		.contents = content,
@@ -185,7 +193,7 @@ static void* k_thread(void* fname) {
 	"mov %%bx, %%es\n\t"
 	"mov %%bx, %%fs\n\t"
 
-	"mov $" XSTR(USER_ESP) ", %%esp\n\t"
+	"mov %[sp], %%esp\n\t"
 	"pushl $15\n\t"
 	"pushl %[entry]\n\t"
 
@@ -196,7 +204,7 @@ static void* k_thread(void* fname) {
 	"xor %%esi, %%esi\n\t"
 	"xor %%edi, %%edi\n\t"
 	"xor %%ebp, %%ebp\n\t"
-	"lret\n\t": : [entry]"r"(entry));
+	"lret\n\t": : [entry]"r"(entry), [sp]"r"(config.sp));
 
 	return NULL;
 }
@@ -213,26 +221,59 @@ static void init_k_state(void) {
 	}
 }
 
+static uint32_t parse_ptr(const char* str) {
+	return strtol(str, NULL, 0);
+}
+
+static void help(const char* argv0) {
+	fprintf(stderr,
+	"Usage: %s [arguments] /path/to/rom\n"
+	"\n"
+	"Arguments:\n"
+	"  -h     \tShow this message\n"
+	"  -s     \tTrace syscalls\n"
+	"  -S addr\tStart value of stack pointer (default: %#x)\n"
+	"  -H addr\tStart value of heap pointer (default: %#x)\n"
+	"  -b addr\tAddress to load the rom (default: %#x)\n"
+	"  -l num \tSize (limit) of the rom's segment (in pages) (default: %#x)\n",
+	argv0, USER_ESP, USER_ESP, BASE, LIMIT);
+}
+
 int main(int argc, char** argv) {
 	int opt;
 
-	while ((opt = getopt(argc, argv, "p:s")) != -1) {
+	while ((opt = getopt(argc, argv, "p:sS:H:b:hl:")) != -1) {
 		switch (opt) {
 		case 'p':
 			config.path = strdup(optarg);
 			break;
+		case 'S': /* stack */
+			config.sp = parse_ptr(optarg);
+			break;
+		case 'H': /* heap */
+			config.brk = parse_ptr(optarg);
+			break;
+		case 'b': /* base address */
+			config.base = parse_ptr(optarg);
+			break;
 		case 's':
 			config.strace = 1;
 			break;
+		default:
+			fprintf(stderr, "\n");
+			/* fallthrough */
+		case 'h':
+			help(argv[0]);
+			exit(opt != 'h');
 		}
 	}
+
+	if (!argv[optind])
+		errx(1, "missing rom file");
 
 	init_k_state();
 
 	SDL_Renderer* renderer = init_window();
-
-	if (!argv[optind])
-		errx(1, "missing rom file");
 
 	pthread_t k_tid;
 	if (pthread_create(&k_tid, NULL, k_thread, argv[optind]) < 0)

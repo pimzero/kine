@@ -21,7 +21,7 @@
 typedef int32_t (*syscall_t)();
 
 static void* get_user(uint32_t ptr) {
-	return (void*)(ptr + BASE);
+	return (void*)(ptr + config.base);
 }
 
 static int32_t sys_write(uint32_t buf, size_t len) {

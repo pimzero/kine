@@ -8,13 +8,6 @@
 #define VIDEO_GRAPHIC	0
 #define VIDEO_TEXT	1
 
-#define XSTR(S) STR(S)
-#define STR(S) #S
-
-#define USER_ESP 0x90000
-#define BASE 65536
-#define LIMIT 20480
-
 struct k_state_t {
 	pthread_mutex_t lock;
 	int video_mode;
@@ -32,6 +25,8 @@ struct k_state_t {
 struct config_t {
 	char* path;
 	int strace;
+
+	uint32_t base, limit, sp, brk;
 };
 
 extern struct k_state_t k_state;
