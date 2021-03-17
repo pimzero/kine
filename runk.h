@@ -11,9 +11,9 @@
 #define XSTR(S) STR(S)
 #define STR(S) #S
 
-#define USER_ESP 0x20000
+#define USER_ESP 0x90000
 #define BASE 65536
-#define LIMIT 256
+#define LIMIT 20480
 
 struct k_state_t {
 	pthread_mutex_t lock;
@@ -32,7 +32,6 @@ struct k_state_t {
 struct config_t {
 	char* path;
 	int strace;
-	int segment;
 };
 
 extern struct k_state_t k_state;

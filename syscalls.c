@@ -17,13 +17,11 @@
 #define KEAGAIN				7 /* Temporary unavailable */
 
 #define ARRSZE(X) (sizeof(X) / sizeof(*(X)))
-#define PAGE_MASK (~(unsigned)(0x1000 - 1))
-#define PROT_RW (PROT_READ|PROT_WRITE|PROT_EXEC)
 
 typedef int32_t (*syscall_t)();
 
 static void* get_user(uint32_t ptr) {
-	return (void*)(ptr + (config.segment ? BASE : 0));
+	return (void*)(ptr + BASE);
 }
 
 static int32_t sys_write(uint32_t buf, size_t len) {
@@ -66,8 +64,15 @@ static int32_t sys_open(uint32_t pathname, int flags) {
 	if (ret < 0)
 		ret = -KENOENT;
 
+	struct stat st = {};
+	fstat(ret, &st);
+	if (S_ISDIR(st.st_mode)) {
+		close(ret);
+		ret = -KENOENT;
+	}
+
 	if (config.strace)
-		fprintf(stderr, "open(%s) = %d\n", path, ret);
+		fprintf(stderr, "open(%s) = %d\n", pathname_ptr, ret);
 
 	return ret;
 }
@@ -177,9 +182,22 @@ static int32_t sys_getkey(void) {
 	return out;
 }
 
-static uint32_t sys_noop(void) {
+static uint32_t sys_set_palette(uint32_t palette, size_t sze) {
+	uint32_t* arr = get_user(palette);
 	if (config.strace)
-		fprintf(stderr, "noop()\n");
+		fprintf(stderr, "set_palette(%x, %zu)\n", palette, sze);
+
+	if (sze > ARRSZE(k_state.palette))
+		sze = ARRSZE(k_state.palette);
+
+	lock();
+	for (size_t i = 0; i < sze; i++) {
+		k_state.palette[i].b = (arr[i] & 0xff) >> 0;
+		k_state.palette[i].r = (arr[i] & 0xff0000) >> 16;
+		k_state.palette[i].g = (arr[i] & 0xff00) >> 8;
+	}
+	unlock();
+
 	return 0;
 }
 
@@ -194,10 +212,7 @@ static syscall_t syscalls[] = {
 	[8] = (syscall_t)sys_close,
 	[9] = (syscall_t)sys_setvideo,
 	[10] = (syscall_t)sys_swap_frontbuffer,
-	[11] = (syscall_t)sys_noop, /* sys_playsound */
-	[12] = (syscall_t)sys_noop, /* sys_setpalette */
-	[13] = (syscall_t)sys_noop, /* sys_getmouse */
-	[14] = (syscall_t)sys_noop, /* sys_getkeymode */
+	[12] = (syscall_t)sys_set_palette,
 };
 
 int32_t syscall_dispatch(uint32_t sysnr, uint32_t* args) {

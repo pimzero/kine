@@ -23,9 +23,7 @@
 #define PR_SYS_DISPATCH_ON 1
 #endif
 
-#define ARRSZE(X) (sizeof(X) / sizeof(*(X)))
-#define PAGE_MASK (~(unsigned)(0x1000 - 1))
-#define PROT_RW (PROT_READ|PROT_WRITE|PROT_EXEC)
+#define PROT_RWX (PROT_READ|PROT_WRITE|PROT_EXEC)
 
 typedef void (*entry_t)(void);
 int32_t syscall_dispatch(uint32_t sysnr, uint32_t* args);
@@ -38,7 +36,6 @@ struct k_state_t k_state = {
 
 struct config_t config = {
 	.path = ".",
-	.segment = 1,
 };
 
 void lock(void) {
@@ -110,7 +107,7 @@ static entry_t load_elf(const char* fname) {
 	if (memcmp(&ehdr, &sig, offsetof(Elf32_Ehdr, e_entry)))
 		errx(1, "invalid file \"%s\"", fname);
 
-	void* t = mmap((void*)BASE, LIMIT * 4096, PROT_RW,
+	void* t = mmap((void*)BASE, LIMIT * 4096, PROT_RWX,
 		       MAP_PRIVATE|MAP_FIXED|MAP_ANON, -1, 0);
 	if (!t)
 		err(1, "mmap");
@@ -123,22 +120,15 @@ static entry_t load_elf(const char* fname) {
 		if (phdr.p_type != PT_LOAD)
 			continue;
 
-		readat(fd, phdr.p_offset,
-		       (config.segment ? t : 0) + phdr.p_vaddr, phdr.p_filesz);
+		readat(fd, phdr.p_offset, t + phdr.p_vaddr, phdr.p_filesz);
 
-		if (phdr.p_vaddr + phdr.p_memsz > k_state.brk)
-			k_state.brk = phdr.p_vaddr + phdr.p_memsz + 512;
-
-		if (phdr.p_flags & PF_X) {
-			if (set_syscall_user_dispatch((void*)k_state.brk,
-			    (void*)-1) < 0)
-				err(1, "set_syscall_user_dispatch");
-		}
 	}
 
-	if (config.segment) {
-		k_state.brk = 0x20000;
-	}
+	k_state.brk = USER_ESP;
+
+	if (set_syscall_user_dispatch((void*)BASE + LIMIT * 4096 ,
+				      (void*)-1) < 0)
+		err(1, "set_syscall_user_dispatch");
 
 	close(fd);
 
@@ -182,36 +172,31 @@ static void* k_thread(void* fname) {
 
 	k_state.starttime = getms();
 
-	if (!config.segment) {
-		entry();
-	} else {
-		set_ldt_entry(1, 2, 1);
-		set_ldt_entry(2, 0, 0);
+	set_ldt_entry(1, 2, 1);
+	set_ldt_entry(2, 0, 0);
 
-		__asm__ volatile(
-		"pushl $15\n\t"
-		"pushl %[entry]\n\t"
+	__asm__ volatile(
+	"pushl $15\n\t"
+	"pushl %[entry]\n\t"
 
-		"mov $23, %%bx\n\t"
-		"mov %%bx, %%ss\n\t"
-		"mov %%bx, %%ds\n\t"
-		"mov %%bx, %%es\n\t"
-		"mov %%bx, %%fs\n\t"
+	"mov $23, %%bx\n\t"
+	"mov %%bx, %%ss\n\t"
+	"mov %%bx, %%ds\n\t"
+	"mov %%bx, %%es\n\t"
+	"mov %%bx, %%fs\n\t"
 
-		"mov $" XSTR(USER_ESP) ", %%ebx\n\t"
-		"mov %%ebx, %%esp\n\t"
-		"pushl $15\n\t"
-		"pushl %[entry]\n\t"
+	"mov $" XSTR(USER_ESP) ", %%esp\n\t"
+	"pushl $15\n\t"
+	"pushl %[entry]\n\t"
 
-		"xor %%eax, %%eax\n\t"
-		"xor %%ebx, %%ebx\n\t"
-		"xor %%ecx, %%ecx\n\t"
-		"xor %%edx, %%edx\n\t"
-		"xor %%esi, %%esi\n\t"
-		"xor %%edi, %%edi\n\t"
-		"xor %%ebp, %%ebp\n\t"
-		"lret\n\t": : [entry]"r"(entry));
-	}
+	"xor %%eax, %%eax\n\t"
+	"xor %%ebx, %%ebx\n\t"
+	"xor %%ecx, %%ecx\n\t"
+	"xor %%edx, %%edx\n\t"
+	"xor %%esi, %%esi\n\t"
+	"xor %%edi, %%edi\n\t"
+	"xor %%ebp, %%ebp\n\t"
+	"lret\n\t": : [entry]"r"(entry));
 
 	return NULL;
 }
