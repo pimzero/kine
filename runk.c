@@ -37,10 +37,8 @@ struct k_state_t k_state = {
 };
 
 struct config_t config = {
-	.path = "/home/pim/Workspace/ref-k/iso",
-	.strace = 1,
+	.path = ".",
 	.segment = 1,
-	//.path = ".",
 };
 
 void lock(void) {
@@ -231,15 +229,28 @@ static void init_k_state(void) {
 }
 
 int main(int argc, char** argv) {
-	if (argc < 2)
-		errx(1, "Not enough arguments");
+	int opt;
+
+	while ((opt = getopt(argc, argv, "p:s")) != -1) {
+		switch (opt) {
+		case 'p':
+			config.path = strdup(optarg);
+			break;
+		case 's':
+			config.strace = 1;
+			break;
+		}
+	}
 
 	init_k_state();
 
 	SDL_Renderer* renderer = init_window();
 
+	if (!argv[optind])
+		errx(1, "missing rom file");
+
 	pthread_t k_tid;
-	if (pthread_create(&k_tid, NULL, k_thread, argv[1]) < 0)
+	if (pthread_create(&k_tid, NULL, k_thread, argv[optind]) < 0)
 		err(1, "pthread_create");
 
 	while (!k_state.quit) {
