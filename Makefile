@@ -1,11 +1,18 @@
-CPPFLAGS=-D_GNU_SOURCE
+CPPFLAGS=-D_GNU_SOURCE -MMD
 CFLAGS=-std=c99 -Wall -Wextra -m32 `pkg-config --cflags sdl2`
-LDFLAGS=-m32 -ggdb
+LDFLAGS=-m32
 LDLIBS=`pkg-config --libs sdl2` -lpthread
 
-runk: runk.o syscalls.o sdl.o
+OBJS=kine.o syscalls.o sdl.o
+BIN=kine
+
+DEPS=$(OBJS:.o=.d)
+
+$(BIN): $(OBJS)
 
 clean:
-	$(RM) runk
+	$(RM) $(BIN) $(OBJS) $(DEPS)
+
+-include $(DEPS)
 
 .PHONY: clean

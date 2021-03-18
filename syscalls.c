@@ -6,7 +6,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "runk.h"
+#include "kine.h"
 
 #define KENOMEM				1 /* Not enough space */
 #define KENOENT				2 /* No such file or directory */
@@ -172,7 +172,6 @@ static int32_t sys_getkey(void) {
 	lock();
 
 	out = k_state.key;
-	k_state.key = -1;
 
 	unlock();
 
@@ -201,6 +200,22 @@ static uint32_t sys_set_palette(uint32_t palette, size_t sze) {
 	return 0;
 }
 
+static int32_t sys_getkeymode(int released) {
+	int32_t out = -KEAGAIN;
+	struct ring* r = released ? &k_state.released : &k_state.pressed ;
+
+	lock();
+	uint8_t c = 0;
+	if (ring_pop(r, &c) >= 0)
+		out = c;
+	unlock();
+
+	if (config.strace)
+		fprintf(stderr, "getkeymode(%d) = %d\n", released, out);
+
+	return out;
+}
+
 static syscall_t syscalls[] = {
 	[1] = (syscall_t)sys_write,
 	[2] = (syscall_t)sys_sbrk,
@@ -213,6 +228,7 @@ static syscall_t syscalls[] = {
 	[9] = (syscall_t)sys_setvideo,
 	[10] = (syscall_t)sys_swap_frontbuffer,
 	[12] = (syscall_t)sys_set_palette,
+	[14] = (syscall_t)sys_getkeymode,
 };
 
 int32_t syscall_dispatch(uint32_t sysnr, uint32_t* args) {

@@ -1,5 +1,5 @@
-#ifndef RUNK_H
-#define RUNK_H
+#ifndef KINE_H
+#define KINE_H
 
 #include "stdint.h"
 
@@ -7,6 +7,12 @@
 
 #define VIDEO_GRAPHIC	0
 #define VIDEO_TEXT	1
+
+struct ring {
+	uint8_t buf[256];
+	uint8_t a, z;
+};
+#define RING_INITIALIZER { .a = -1 }
 
 struct k_state_t {
 	pthread_mutex_t lock;
@@ -17,9 +23,11 @@ struct k_state_t {
 	SDL_Palette* sdl_palette;
 	int32_t key;
 
+	struct ring pressed, released;
+
 	/* unlocked */
-	uint32_t brk;
-	uint32_t starttime;
+	uint32_t brk; /* only accessed by k_thread */
+	uint32_t starttime; /* only read */
 };
 
 struct config_t {
@@ -34,6 +42,24 @@ extern struct config_t config;
 
 void lock(void);
 void unlock(void);
+
+static inline int ring_push(struct ring* rb, uint8_t c) {
+	if ((rb->z + 1) % 256 == rb->a)
+		return -1;
+
+	rb->buf[rb->z++] = c;
+
+	return 0;
+}
+
+static inline int ring_pop(struct ring* rb, uint8_t* c) {
+	if ((rb->a + 1) % 256 == rb->z)
+		return -1;
+
+	*c = rb->buf[++rb->a];
+
+	return 0;
+}
 
 uint32_t getms(void);
 

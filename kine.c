@@ -4,17 +4,17 @@
 #include <fcntl.h>
 #include <pthread.h>
 #include <signal.h>
+#include <stddef.h>
 #include <stdio.h>
+#include <syscall.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include <syscall.h>
 #include <unistd.h>
 
-#include "runk.h"
-#include <stddef.h>
+#include "kine.h"
 
 #ifndef PR_SET_SYSCALL_USER_DISPATCH
 #define PR_SET_SYSCALL_USER_DISPATCH 59
@@ -36,6 +36,8 @@ struct k_state_t k_state = {
 	.lock = PTHREAD_MUTEX_INITIALIZER,
 	.video_mode = VIDEO_TEXT,
 	.key = -1,
+	.pressed = RING_INITIALIZER,
+	.released = RING_INITIALIZER
 };
 
 struct config_t config = {
@@ -105,8 +107,14 @@ static entry_t load_elf(const char* fname) {
 
 	Elf32_Ehdr sig = {
 		.e_ident = {
-			ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3, ELFCLASS32,
-			ELFDATA2LSB, EV_CURRENT, ELFOSABI_SYSV
+			ELFMAG0,
+			ELFMAG1,
+			ELFMAG2,
+			ELFMAG3,
+			ELFCLASS32,
+			ELFDATA2LSB,
+			EV_CURRENT,
+			ELFOSABI_SYSV
 		},
 		.e_type = ET_EXEC,
 		.e_machine = EM_386,
@@ -115,9 +123,9 @@ static entry_t load_elf(const char* fname) {
 	if (memcmp(&ehdr, &sig, offsetof(Elf32_Ehdr, e_entry)))
 		errx(1, "invalid file \"%s\"", fname);
 
-	void* t = mmap((void*)config.base, config.limit * 4096, PROT_RWX,
-		       MAP_PRIVATE|MAP_FIXED|MAP_ANON, -1, 0);
-	if (!t)
+	void* map = mmap((void*)config.base, config.limit * 4096, PROT_RWX,
+			 MAP_PRIVATE|MAP_FIXED|MAP_ANON, -1, 0);
+	if (!map)
 		err(1, "mmap");
 
 	for (size_t i = 0; i < ehdr.e_phnum; i++) {
@@ -128,8 +136,7 @@ static entry_t load_elf(const char* fname) {
 		if (phdr.p_type != PT_LOAD)
 			continue;
 
-		readat(fd, phdr.p_offset, t + phdr.p_vaddr, phdr.p_filesz);
-
+		readat(fd, phdr.p_offset, map + phdr.p_vaddr, phdr.p_filesz);
 	}
 
 	k_state.brk = config.brk;
@@ -144,7 +151,7 @@ static entry_t load_elf(const char* fname) {
 }
 
 static void set_ldt_entry(unsigned nr, unsigned content,
-			  unsigned read_exec_only) {
+				 unsigned read_exec_only) {
 	struct user_desc ldt_entry = {
 		.entry_number = nr,
 		.base_addr = config.base,
@@ -158,30 +165,8 @@ static void set_ldt_entry(unsigned nr, unsigned content,
 		err(1, "modify_ldt");
 }
 
-static void* k_thread(void* fname) {
-	entry_t entry = load_elf(fname);
-
-	stack_t ss;
-	ss.ss_sp = malloc(SIGSTKSZ * 16);
-	if (!ss.ss_sp)
-		err(1, "malloc");
-	ss.ss_size = SIGSTKSZ * 16;
-	ss.ss_flags = 0;
-
-	if (sigaltstack(&ss, NULL) < 0)
-		err(1, "sigaltstack");
-
-	struct sigaction sa = {
-		.sa_sigaction = sigsys_handler,
-		.sa_flags = SA_SIGINFO|SA_ONSTACK,
-	};
-
-	sigaction(SIGSYS, &sa, NULL);
-
+static void k_start(void* entry) {
 	k_state.starttime = getms();
-
-	set_ldt_entry(1, 2, 1);
-	set_ldt_entry(2, 0, 0);
 
 	__asm__ volatile(
 	"pushl $15\n\t"
@@ -205,6 +190,37 @@ static void* k_thread(void* fname) {
 	"xor %%edi, %%edi\n\t"
 	"xor %%ebp, %%ebp\n\t"
 	"lret\n\t": : [entry]"r"(entry), [sp]"r"(config.sp));
+}
+
+static void k_setup_sighandler(void) {
+	stack_t ss = {
+		.ss_sp = malloc(SIGSTKSZ * 16),
+		.ss_size = SIGSTKSZ * 16,
+		.ss_flags = 0
+	};
+	if (!ss.ss_sp)
+		err(1, "malloc");
+
+	if (sigaltstack(&ss, NULL) < 0)
+		err(1, "sigaltstack");
+
+	struct sigaction sa = {
+		.sa_sigaction = sigsys_handler,
+		.sa_flags = SA_SIGINFO|SA_ONSTACK,
+	};
+	if (sigaction(SIGSYS, &sa, NULL) < 0)
+		err(1, "sigaction");
+}
+
+static void* k_thread(void* fname) {
+	entry_t entry = load_elf(fname);
+
+	k_setup_sighandler();
+
+	set_ldt_entry(1, 2, 1);
+	set_ldt_entry(2, 0, 0);
+
+	k_start(entry);
 
 	return NULL;
 }
@@ -214,6 +230,7 @@ static void init_k_state(void) {
 	if (!k_state.sdl_palette)
 		errx(1, "SDL_AllocPalette: %s", SDL_GetError());
 
+	/* TODO: Use a reasonable default palette */
 	for (unsigned i = 0; i < 256; i++) {
 		k_state.palette[i].r = i & 0xe;
 		k_state.palette[i].g = (i & 0x1c) << 3;
