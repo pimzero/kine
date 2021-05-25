@@ -1,9 +1,11 @@
 #ifndef KINE_H
 #define KINE_H
 
-#include "stdint.h"
+#include <stdint.h>
 
 #include "SDL.h"
+
+#define ARRSZE(X) (sizeof(X) / sizeof(*(X)))
 
 #define VIDEO_GRAPHIC	0
 #define VIDEO_TEXT	1

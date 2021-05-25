@@ -5,7 +5,7 @@
 SDL_Renderer* init_window(void) {
 	SDL_Init(SDL_INIT_VIDEO);
 
-	SDL_Window* window = SDL_CreateWindow("Run K", SDL_WINDOWPOS_UNDEFINED,
+	SDL_Window* window = SDL_CreateWindow("kine", SDL_WINDOWPOS_UNDEFINED,
 					      SDL_WINDOWPOS_UNDEFINED, 640, 400,
 					      SDL_WINDOW_OPENGL);
 	if (!window)
@@ -124,8 +124,6 @@ static unsigned char keymap[] = {
 	[0xE7] = 0x5C,
 };
 
-#define ARRSZE(X) (sizeof(X) / sizeof(*(X)))
-
 static int32_t scancode(SDL_Scancode orig) {
 	int32_t out = -1;
 	if (orig <= ARRSZE(keymap) && keymap[orig])
@@ -143,7 +141,6 @@ void update_inputs() {
 		case SDL_QUIT:
 			k_state.quit = 1;
 			break;
-
 		case SDL_KEYDOWN:
 			k_state.key = scancode(event.key.keysym.scancode);
 			ring_push(&k_state.pressed, k_state.key);
@@ -151,7 +148,8 @@ void update_inputs() {
 		case SDL_KEYUP:
 			if (k_state.key == scancode(event.key.keysym.scancode))
 				k_state.key = -1;
-			ring_push(&k_state.released, scancode(event.key.keysym.scancode));
+			ring_push(&k_state.released,
+				  scancode(event.key.keysym.scancode));
 			break;
 		default:
 			break;

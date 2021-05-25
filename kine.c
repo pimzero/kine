@@ -136,18 +136,19 @@ static entry_t load_elf(const char* fname) {
 		if (phdr.p_type != PT_LOAD)
 			continue;
 
-		readat(fd, phdr.p_offset, map + phdr.p_vaddr, phdr.p_filesz);
+		readat(fd, phdr.p_offset, (char*)map + phdr.p_vaddr,
+		       phdr.p_filesz);
 	}
 
 	k_state.brk = config.brk;
 
-	if (set_syscall_user_dispatch((void*)config.base + config.limit * 4096,
+	if (set_syscall_user_dispatch((char*)config.base + config.limit * 4096,
 				      (void*)-1) < 0)
 		err(1, "set_syscall_user_dispatch");
 
 	close(fd);
 
-	return (void*)ehdr.e_entry;
+	return (entry_t)ehdr.e_entry;
 }
 
 static void set_ldt_entry(unsigned nr, unsigned content,
@@ -165,7 +166,7 @@ static void set_ldt_entry(unsigned nr, unsigned content,
 		err(1, "modify_ldt");
 }
 
-static void k_start(void* entry) {
+static void k_start(entry_t entry) {
 	k_state.starttime = getms();
 
 	__asm__ volatile(

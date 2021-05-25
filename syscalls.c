@@ -16,8 +16,6 @@
 #define KEBADF				6 /* fd is not an open file descriptor */
 #define KEAGAIN				7 /* Temporary unavailable */
 
-#define ARRSZE(X) (sizeof(X) / sizeof(*(X)))
-
 typedef int32_t (*syscall_t)();
 
 static void* get_user(uint32_t ptr) {
@@ -64,7 +62,7 @@ static int32_t sys_open(uint32_t pathname, int flags) {
 	if (ret < 0)
 		ret = -KENOENT;
 
-	struct stat st = {};
+	struct stat st = { 0 };
 	fstat(ret, &st);
 	if (S_ISDIR(st.st_mode)) {
 		close(ret);
@@ -105,7 +103,7 @@ static int32_t sys_read(int fd, uint32_t buf, uint32_t count) {
 	int ret = read(fd, buf_ptr, count);
 
 	if (config.strace)
-		fprintf(stderr, "read(%d, %p, %u) = %d (%m)\n", fd, buf_ptr,
+		fprintf(stderr, "read(%d, %p, %u) = %d\n", fd, buf_ptr,
 			count, ret);
 
 	if (ret < 0) {
