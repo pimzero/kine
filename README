@@ -1,0 +1,13 @@
+Kine: Kine Is Not an Emulator
+=============================
+
+I wanted to play with the new prctl PR_SET_SYSCALL_USER_DISPATCH, so I wrote an
+emulation layer for github.com/lse/k. It also seemed like a good opportunity to
+throw some assembly and few calls to modify_ldt(2) :).
+
+Usage
+-----
+
+```
+$ ./kine  -p "/tmp/ref-k/iso" /tmp/ref-k/roms/perrodlauncher/perrod
+```
