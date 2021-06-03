@@ -41,6 +41,7 @@ struct config_t {
 
 extern struct k_state_t k_state;
 extern struct config_t config;
+extern const unsigned int libvga_default_palette[256];
 
 void lock(void);
 void unlock(void);

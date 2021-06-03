@@ -231,11 +231,10 @@ static void init_k_state(void) {
 	if (!k_state.sdl_palette)
 		errx(1, "SDL_AllocPalette: %s", SDL_GetError());
 
-	/* TODO: Use a reasonable default palette */
 	for (unsigned i = 0; i < 256; i++) {
-		k_state.palette[i].r = i & 0xe;
-		k_state.palette[i].g = (i & 0x1c) << 3;
-		k_state.palette[i].b = (i & 0x3) << 6;
+		k_state.palette[i].b = libvga_default_palette[i] & 0xff;
+		k_state.palette[i].g = (libvga_default_palette[i] >> 8) & 0xff;
+		k_state.palette[i].r = (libvga_default_palette[i] >> 16) & 0xff;
 	}
 }
 
