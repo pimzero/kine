@@ -1,0 +1,3 @@
+[submodule "third_party/k"]
+	path = third_party/k
+	url = https://github.com/lse/k

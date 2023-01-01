@@ -7,9 +7,6 @@
 
 #define ARRSZE(X) (sizeof(X) / sizeof(*(X)))
 
-#define VIDEO_GRAPHIC	0
-#define VIDEO_TEXT	1
-
 struct ring {
 	uint8_t buf[256];
 	uint8_t a, z;

@@ -15,6 +15,7 @@
 #include <unistd.h>
 
 #include "kine.h"
+#include "kstd.h"
 
 #ifndef PR_SET_SYSCALL_USER_DISPATCH
 #define PR_SET_SYSCALL_USER_DISPATCH 59
@@ -34,7 +35,7 @@ int32_t syscall_dispatch(uint32_t sysnr, uint32_t* args);
 
 struct k_state_t k_state = {
 	.lock = PTHREAD_MUTEX_INITIALIZER,
-	.video_mode = VIDEO_TEXT,
+	.video_mode = KVIDEO_TEXT,
 	.key = -1,
 	.pressed = RING_INITIALIZER,
 	.released = RING_INITIALIZER

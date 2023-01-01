@@ -8,13 +8,7 @@
 
 #include "kine.h"
 
-#define KENOMEM				1 /* Not enough space */
-#define KENOENT				2 /* No such file or directory */
-#define KEIO				3 /* I/O error */
-#define KEINVAL				4 /* Invalid argument */
-#define KENOSYS				5 /* Invalid system call number */
-#define KEBADF				6 /* fd is not an open file descriptor */
-#define KEAGAIN				7 /* Temporary unavailable */
+#include "kstd.h"
 
 typedef int32_t (*syscall_t)();
 
@@ -36,8 +30,8 @@ static int32_t sys_setvideo(int type) {
 		fprintf(stderr, "setvideo(%d)\n", type);
 
 	switch (type) {
-	case VIDEO_TEXT:
-	case VIDEO_GRAPHIC:
+	case KVIDEO_TEXT:
+	case KVIDEO_GRAPHIC:
 		lock();
 
 		k_state.video_mode = type;
@@ -148,13 +142,13 @@ static int32_t sys_seek(int fd, int32_t off, int whence) {
 		fprintf(stderr, "seek(%d, %d, %d)\n", fd, off, whence);
 
 	switch (whence) {
-	case 0:
+	case KSEEK_SET:
 		whence = SEEK_SET;
 		break;
-	case 1:
+	case KSEEK_CUR:
 		whence = SEEK_CUR;
 		break;
-	case 2:
+	case KSEEK_END:
 		whence = SEEK_END;
 		break;
 	default:
@@ -214,18 +208,22 @@ static int32_t sys_getkeymode(int released) {
 	return out;
 }
 
+#define not_implemented NULL
+
 static syscall_t syscalls[] = {
-	[1] = (syscall_t)sys_write,
-	[2] = (syscall_t)sys_sbrk,
-	[3] = (syscall_t)sys_getkey,
-	[4] = (syscall_t)sys_gettick,
-	[5] = (syscall_t)sys_open,
-	[6] = (syscall_t)sys_read,
-	[7] = (syscall_t)sys_seek,
-	[8] = (syscall_t)sys_close,
-	[9] = (syscall_t)sys_setvideo,
-	[10] = (syscall_t)sys_swap_frontbuffer,
-	[12] = (syscall_t)sys_set_palette,
+	[KSYSCALL_WRITE] = (syscall_t)sys_write,
+	[KSYSCALL_SBRK] = (syscall_t)sys_sbrk,
+	[KSYSCALL_GETKEY] = (syscall_t)sys_getkey,
+	[KSYSCALL_GETTICK] = (syscall_t)sys_gettick,
+	[KSYSCALL_OPEN] = (syscall_t)sys_open,
+	[KSYSCALL_READ] = (syscall_t)sys_read,
+	[KSYSCALL_SEEK] = (syscall_t)sys_seek,
+	[KSYSCALL_CLOSE] = (syscall_t)sys_close,
+	[KSYSCALL_SETVIDEO] = (syscall_t)sys_setvideo,
+	[KSYSCALL_SWAP_FRONTBUFFER] = (syscall_t)sys_swap_frontbuffer,
+	[KSYSCALL_PLAYSOUND] = (syscall_t)not_implemented, /* not implemented */
+	[KSYSCALL_SETPALETTE] = (syscall_t)sys_set_palette,
+	[KSYSCALL_GETMOUSE] = (syscall_t)not_implemented, /* not implemented */
 	[14] = (syscall_t)sys_getkeymode,
 };
 
