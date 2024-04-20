@@ -91,7 +91,28 @@ static int modify_ldt(int func, struct user_desc* ptr, unsigned long count) {
     return syscall(SYS_modify_ldt, func, ptr, count);
 }
 
-static void sigsys_handler(int n, siginfo_t* siginfo, void* ucontext) {
+extern void sigsys_handler_asm(int, siginfo_t*, void*);
+
+__asm__(".text\n"
+".global sigsys_handler_asm\n"
+".align 16\n"
+"sigsys_handler_asm:\n\t"
+"mov $0, %bx\n\t"
+"mov %bx, %fs\n\t"
+"mov $99, %bx\n\t"
+"mov %bx, %gs\n\t"
+
+"call sigsys_handler\n\t"
+
+"mov $23, %bx\n\t"
+"mov %bx, %fs\n\t"
+"mov %bx, %gs\n\t"
+"ret\n\t"
+);
+
+__attribute__ ((used))
+static void sigsys_handler(void* return_addr, int n, siginfo_t* siginfo, void* ucontext) {
+	(void) return_addr;
 	(void) n;
 
 	struct ucontext_t* ctx = ucontext;
@@ -192,6 +213,7 @@ static void k_start(entry_t entry) {
 	"mov %%bx, %%ds\n\t"
 	"mov %%bx, %%es\n\t"
 	"mov %%bx, %%fs\n\t"
+	"mov %%bx, %%gs\n\t"
 
 	"mov %[sp], %%esp\n\t"
 	"pushl $15\n\t"
@@ -223,7 +245,7 @@ static void k_setup_sighandler(void) {
 		err(1, "sigaltstack");
 
 	struct sigaction sa = {
-		.sa_sigaction = sigsys_handler,
+		.sa_sigaction = sigsys_handler_asm,
 		.sa_flags = SA_SIGINFO|SA_ONSTACK,
 	};
 	if (sigaction(SIGSYS, &sa, NULL) < 0)
