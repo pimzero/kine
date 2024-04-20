@@ -187,9 +187,6 @@ static void k_start(entry_t entry) {
 	k_state.starttime = getms();
 
 	__asm__ volatile(
-	"pushl $15\n\t"
-	"pushl %[entry]\n\t"
-
 	"mov $23, %%bx\n\t"
 	"mov %%bx, %%ss\n\t"
 	"mov %%bx, %%ds\n\t"
@@ -207,7 +204,10 @@ static void k_start(entry_t entry) {
 	"xor %%esi, %%esi\n\t"
 	"xor %%edi, %%edi\n\t"
 	"xor %%ebp, %%ebp\n\t"
-	"lret\n\t": : [entry]"r"(entry), [sp]"r"(config.sp));
+	"lret\n\t"
+	: /* outputs */
+	: [entry]"r"(entry), [sp]"r"(config.sp)
+	: "memory");
 }
 
 static void k_setup_sighandler(void) {
