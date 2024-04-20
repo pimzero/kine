@@ -33,6 +33,9 @@
 #include "kine.h"
 #include "kstd.h"
 
+#define XSTR(S) STR(S)
+#define STR(S) #S
+
 #ifndef PR_SET_SYSCALL_USER_DISPATCH
 #define PR_SET_SYSCALL_USER_DISPATCH 59
 #endif
@@ -45,6 +48,16 @@
 #define USER_ESP 0x90000
 #define BASE 65536
 #define LIMIT 10240
+
+#define SEGMENT_CODE 1
+#define SEGMENT_DATA 2
+#define SEGMENT_LINUX_GS 12 /* TODO: This is only correct on x86-64 */
+
+#define SEGMENT_LDT (1 << 2)
+#define SEGMENT_GDT 0
+#define SEGMENT_RPL3 (0x3)
+#define SEG_REG(Segment, Table, Rpl) \
+	((SEGMENT_##Segment << 3) | SEGMENT_##Table | SEGMENT_RPL##Rpl)
 
 typedef void (*entry_t)(void);
 int32_t syscall_dispatch(uint32_t sysnr, uint32_t* args);
@@ -99,12 +112,12 @@ __asm__(".text\n"
 "sigsys_handler_asm:\n\t"
 "mov $0, %bx\n\t"
 "mov %bx, %fs\n\t"
-"mov $99, %bx\n\t"
+"mov $" XSTR(SEG_REG(LINUX_GS, GDT, 3)) ", %bx\n\t"
 "mov %bx, %gs\n\t"
 
 "call sigsys_handler\n\t"
 
-"mov $23, %bx\n\t"
+"mov $" XSTR(SEG_REG(DATA, LDT, 3)) ", %bx\n\t"
 "mov %bx, %fs\n\t"
 "mov %bx, %gs\n\t"
 "ret\n\t"
@@ -190,7 +203,7 @@ static entry_t load_elf(const char* fname) {
 }
 
 static void set_ldt_entry(unsigned nr, unsigned content,
-				 unsigned read_exec_only) {
+			  unsigned read_exec_only) {
 	struct user_desc ldt_entry = {
 		.entry_number = nr,
 		.base_addr = config.base,
@@ -208,7 +221,7 @@ static void k_start(entry_t entry) {
 	k_state.starttime = getms();
 
 	__asm__ volatile(
-	"mov $23, %%bx\n\t"
+	"mov $" XSTR(SEG_REG(DATA, LDT, 3)) ", %%bx\n\t"
 	"mov %%bx, %%ss\n\t"
 	"mov %%bx, %%ds\n\t"
 	"mov %%bx, %%es\n\t"
@@ -216,7 +229,7 @@ static void k_start(entry_t entry) {
 	"mov %%bx, %%gs\n\t"
 
 	"mov %[sp], %%esp\n\t"
-	"pushl $15\n\t"
+	"pushl $" XSTR(SEG_REG(CODE, LDT, 3)) "\n\t"
 	"pushl %[entry]\n\t"
 
 	"xor %%eax, %%eax\n\t"
@@ -257,8 +270,8 @@ static void* k_thread(void* fname) {
 
 	k_setup_sighandler();
 
-	set_ldt_entry(1, 2, 1);
-	set_ldt_entry(2, 0, 0);
+	set_ldt_entry(SEGMENT_CODE, 2, 1);
+	set_ldt_entry(SEGMENT_DATA, 0, 0);
 
 	k_start(entry);
 
