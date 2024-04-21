@@ -104,31 +104,34 @@ static int modify_ldt(int func, struct user_desc* ptr, unsigned long count) {
     return syscall(SYS_modify_ldt, func, ptr, count);
 }
 
-extern void sigsys_handler_asm(int, siginfo_t*, void*);
+void sigsys_handler_asm(int, siginfo_t*, void*);
 
-__asm__(".text\n"
-".global sigsys_handler_asm\n"
-".align 16\n"
+__asm__(".pushsection .text\n"
 "sigsys_handler_asm:\n\t"
+"push %ebp\n\t"
+"mov %esp, %ebp\n\t"
+
 "mov $0, %bx\n\t"
 "mov %bx, %fs\n\t"
 "mov $" XSTR(SEG_REG(LINUX_GS, GDT, 3)) ", %bx\n\t"
 "mov %bx, %gs\n\t"
+
+"push 16(%ebp)\n\t" /* ctx */
+"push 12(%ebp)\n\t" /* siginfo */
 
 "call sigsys_handler\n\t"
 
 "mov $" XSTR(SEG_REG(DATA, LDT, 3)) ", %bx\n\t"
 "mov %bx, %fs\n\t"
 "mov %bx, %gs\n\t"
-"ret\n\t"
+
+"leave\n\t"
+"ret\n"
+".popsection\n"
 );
 
 __attribute__ ((used))
-static void sigsys_handler(void* return_addr, int n, siginfo_t* siginfo, void* ucontext) {
-	(void) return_addr;
-	(void) n;
-
-	struct ucontext_t* ctx = ucontext;
+static void sigsys_handler(siginfo_t* siginfo, struct ucontext_t* ctx) {
 	uint32_t args[] = {
 		ctx->uc_mcontext.gregs[REG_EBX],
 		ctx->uc_mcontext.gregs[REG_ECX],
