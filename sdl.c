@@ -19,6 +19,9 @@
 #include "kine.h"
 
 SDL_Renderer* init_window(void) {
+	if (SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1") == SDL_FALSE)
+		warnx("SDL_SetHint(NO_SIGNAL_HANDLERS) failed");
+
 	SDL_Init(SDL_INIT_VIDEO);
 
 	SDL_Window* window = SDL_CreateWindow("kine", SDL_WINDOWPOS_UNDEFINED,
