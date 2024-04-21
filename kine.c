@@ -304,14 +304,27 @@ static void help(const char* argv0) {
 	"  -S addr\tStart value of stack pointer (default: %#x)\n"
 	"  -H addr\tStart value of heap pointer (default: %#x)\n"
 	"  -b addr\tAddress to load the rom (default: %#x)\n"
-	"  -l num \tSize (limit) of the rom's segment (in pages) (default: %#x)\n",
+	"  -l num \tSize (limit) of the rom's segment (in pages) (default: %#x)\n"
+	"  -T\tRuns k on the main thread\n",
 	argv0, USER_ESP, USER_ESP, BASE, LIMIT);
+}
+
+static void* sdl_thread(void* ) {
+	SDL_Renderer* renderer = init_window();
+	while (!k_state.quit) {
+		update_inputs();
+		update_renderer(renderer);
+	}
+
+	SDL_Quit();
+
+	return NULL;
 }
 
 int main(int argc, char** argv) {
 	int opt;
 
-	while ((opt = getopt(argc, argv, "p:sS:H:b:hl:")) != -1) {
+	while ((opt = getopt(argc, argv, "p:sS:H:b:hl:T")) != -1) {
 		switch (opt) {
 		case 'p':
 			config.path = strdup(optarg);
@@ -328,6 +341,9 @@ int main(int argc, char** argv) {
 		case 's':
 			config.strace = 1;
 			break;
+		case 'T':
+			config.k_on_main_thread = 1;
+			break;
 		default:
 			fprintf(stderr, "\n");
 			/* fallthrough */
@@ -342,17 +358,18 @@ int main(int argc, char** argv) {
 
 	init_k_state();
 
-	SDL_Renderer* renderer = init_window();
 
-	pthread_t k_tid;
-	if (pthread_create(&k_tid, NULL, k_thread, argv[optind]) < 0)
-		err(1, "pthread_create");
+	pthread_t tid;
+	if (config.k_on_main_thread) {
+		if (pthread_create(&tid, NULL, sdl_thread, NULL) < 0)
+			err(1, "pthread_create");
 
-	while (!k_state.quit) {
-		update_inputs();
-		update_renderer(renderer);
+		k_thread(argv[optind]);
+	} else {
+		if (pthread_create(&tid, NULL, k_thread, argv[optind]) < 0)
+			err(1, "pthread_create");
+
+		sdl_thread(NULL);
 	}
-
-	pthread_cancel(k_tid);
-	SDL_Quit();
+	pthread_cancel(tid);
 }
