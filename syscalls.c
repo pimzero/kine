@@ -18,6 +18,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -25,6 +26,9 @@
 #include "kine.h"
 
 #include "kstd.h"
+
+extern struct config_t config;
+extern struct k_state_t k_state;
 
 typedef int32_t (*syscall_t)();
 
@@ -48,11 +52,11 @@ static int32_t sys_setvideo(int type) {
 	switch (type) {
 	case KVIDEO_TEXT:
 	case KVIDEO_GRAPHIC:
-		lock();
+		k_lock(&k_state);
 
 		k_state.video_mode = type;
 
-		unlock();
+		k_unlock(&k_state);
 		return 0;
 	default:
 		return -KEINVAL;
@@ -98,11 +102,7 @@ static int32_t sys_swap_frontbuffer(uint32_t buffer) {
 	if (config.strace)
 		fprintf(stderr, "swap_frontbuffer()\n");
 
-	lock();
-
-	memcpy(&k_state.framebuffer, get_user(buffer), 320 * 200);
-
-	unlock();
+	k_state.render_state->swap_frontbuffer(k_state.render_state, get_user(buffer));
 
 	return 0;
 }
@@ -177,11 +177,11 @@ static int32_t sys_seek(int fd, int32_t off, int whence) {
 static int32_t sys_getkey(void) {
 	int32_t out = -1;
 
-	lock();
+	k_lock(&k_state);
 
 	out = k_state.key;
 
-	unlock();
+	k_unlock(&k_state);
 
 	if (config.strace)
 		fprintf(stderr, "getkey() = %d\n", out);
@@ -194,16 +194,9 @@ static uint32_t sys_set_palette(uint32_t palette, size_t sze) {
 	if (config.strace)
 		fprintf(stderr, "set_palette(%x, %zu)\n", palette, sze);
 
-	if (sze > ARRSZE(k_state.palette))
-		sze = ARRSZE(k_state.palette);
-
-	lock();
-	for (size_t i = 0; i < sze; i++) {
-		k_state.palette[i].b = (arr[i] & 0xff) >> 0;
-		k_state.palette[i].r = (arr[i] & 0xff0000) >> 16;
-		k_state.palette[i].g = (arr[i] & 0xff00) >> 8;
-	}
-	unlock();
+	k_lock(&k_state);
+	k_state.render_state->set_palette(k_state.render_state, arr, sze);
+	k_unlock(&k_state);
 
 	return 0;
 }
@@ -212,11 +205,11 @@ static int32_t sys_getkeymode(int released) {
 	int32_t out = -KEAGAIN;
 	struct ring* r = released ? &k_state.released : &k_state.pressed ;
 
-	lock();
+	k_lock(&k_state);
 	uint8_t c = 0;
 	if (ring_pop(r, &c) >= 0)
 		out = c;
-	unlock();
+	k_unlock(&k_state);
 
 	if (config.strace)
 		fprintf(stderr, "getkeymode(%d) = %d\n", released, out);

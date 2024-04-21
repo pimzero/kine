@@ -22,6 +22,8 @@
 #include <signal.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <syscall.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
@@ -78,13 +80,13 @@ struct config_t config = {
 	.brk = USER_ESP,
 };
 
-void lock(void) {
-	if (pthread_mutex_lock(&k_state.lock))
+void k_lock(struct k_state_t* k) {
+	if (pthread_mutex_lock(&k->lock))
 		err(1, "pthread_mutex_lock");
 }
 
-void unlock(void) {
-	if (pthread_mutex_unlock(&k_state.lock))
+void k_unlock(struct k_state_t* k) {
+	if (pthread_mutex_unlock(&k->lock))
 		err(1, "pthread_mutex_unlock");
 }
 
@@ -281,18 +283,6 @@ static void* k_thread(void* fname) {
 	return NULL;
 }
 
-static void init_k_state(void) {
-	k_state.sdl_palette = SDL_AllocPalette(256);
-	if (!k_state.sdl_palette)
-		errx(1, "SDL_AllocPalette: %s", SDL_GetError());
-
-	for (unsigned i = 0; i < 256; i++) {
-		k_state.palette[i].b = libvga_default_palette[i] & 0xff;
-		k_state.palette[i].g = (libvga_default_palette[i] >> 8) & 0xff;
-		k_state.palette[i].r = (libvga_default_palette[i] >> 16) & 0xff;
-	}
-}
-
 static uint32_t parse_ptr(const char* str) {
 	return strtol(str, NULL, 0);
 }
@@ -308,20 +298,8 @@ static void help(const char* argv0) {
 	"  -H addr\tStart value of heap pointer (default: %#x)\n"
 	"  -b addr\tAddress to load the rom (default: %#x)\n"
 	"  -l num \tSize (limit) of the rom's segment (in pages) (default: %#x)\n"
-	"  -T\tRuns k on the main thread\n",
+	"  -T     \tRuns k on the main thread\n",
 	argv0, USER_ESP, USER_ESP, BASE, LIMIT);
-}
-
-static void* sdl_thread(void* ) {
-	SDL_Renderer* renderer = init_window();
-	while (!k_state.quit) {
-		update_inputs();
-		update_renderer(renderer);
-	}
-
-	SDL_Quit();
-
-	return NULL;
 }
 
 int main(int argc, char** argv) {
@@ -359,12 +337,9 @@ int main(int argc, char** argv) {
 	if (!argv[optind])
 		errx(1, "missing rom file");
 
-	init_k_state();
-
-
 	pthread_t tid;
 	if (config.k_on_main_thread) {
-		if (pthread_create(&tid, NULL, sdl_thread, NULL) < 0)
+		if (pthread_create(&tid, NULL, render_thread, &k_state) < 0)
 			err(1, "pthread_create");
 
 		k_thread(argv[optind]);
@@ -372,7 +347,6 @@ int main(int argc, char** argv) {
 		if (pthread_create(&tid, NULL, k_thread, argv[optind]) < 0)
 			err(1, "pthread_create");
 
-		sdl_thread(NULL);
+		render_thread(&k_state);
 	}
-	pthread_cancel(tid);
 }

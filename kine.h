@@ -18,8 +18,7 @@
 #define KINE_H
 
 #include <stdint.h>
-
-#include "SDL.h"
+#include <pthread.h>
 
 #define ARRSZE(X) (sizeof(X) / sizeof(*(X)))
 
@@ -29,14 +28,17 @@ struct ring {
 };
 #define RING_INITIALIZER { .a = -1 }
 
+struct render_state {
+	void (*set_palette)(struct render_state*, const uint32_t*, size_t);
+	void (*swap_frontbuffer)(struct render_state*, uint32_t*);
+};
+
 struct k_state_t {
 	pthread_mutex_t lock;
 	int video_mode;
 	int quit;
-	uint32_t framebuffer[320 * 200];
-	SDL_Color palette[256];
-	SDL_Palette* sdl_palette;
 	int32_t key;
+	struct render_state* render_state;
 
 	struct ring pressed, released;
 
@@ -52,12 +54,8 @@ struct config_t {
 	uint32_t base, limit, sp, brk;
 };
 
-extern struct k_state_t k_state;
-extern struct config_t config;
-extern const unsigned int libvga_default_palette[256];
-
-void lock(void);
-void unlock(void);
+void k_lock(struct k_state_t*);
+void k_unlock(struct k_state_t*);
 
 static inline int ring_push(struct ring* rb, uint8_t c) {
 	if ((rb->z + 1) % 256 == rb->a)
@@ -83,8 +81,6 @@ static inline uint32_t align_up(uint32_t ptr) {
 	return (ptr + 0xfff) & ~(uint32_t)0xfff;
 }
 
-SDL_Renderer* init_window(void);
-void update_inputs();
-void update_renderer(SDL_Renderer* renderer);
+void* render_thread(void*);
 
 #endif

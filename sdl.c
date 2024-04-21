@@ -15,14 +15,28 @@
  */
 
 #include <err.h>
+#include "SDL.h"
 
 #include "kine.h"
 
-SDL_Renderer* init_window(void) {
+extern const unsigned int libvga_default_palette[256];
+
+struct render_state_sdl {
+	struct render_state base;
+	SDL_Color palette[256];
+	SDL_Palette* sdl_palette;
+	SDL_Renderer* renderer;
+	uint32_t framebuffer[320 * 200];
+};
+
+static uint32_t sdl_ev_swap_frontbuffer;
+
+static SDL_Renderer* init_window(void) {
 	if (SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1") == SDL_FALSE)
 		warnx("SDL_SetHint(NO_SIGNAL_HANDLERS) failed");
 
-	SDL_Init(SDL_INIT_VIDEO);
+	if (SDL_Init(SDL_INIT_VIDEO) < 0)
+		errx(1, "SDL_Init: %s", SDL_GetError());
 
 	SDL_Window* window = SDL_CreateWindow("kine", SDL_WINDOWPOS_UNDEFINED,
 					      SDL_WINDOWPOS_UNDEFINED, 640, 400,
@@ -33,6 +47,10 @@ SDL_Renderer* init_window(void) {
 	SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, 0);
 	if (!renderer)
 		errx(1, "SDL_CreateRenderer: %s", SDL_GetError());
+
+	sdl_ev_swap_frontbuffer = SDL_RegisterEvents(1);
+	if (sdl_ev_swap_frontbuffer == (uint32_t)-1)
+		errx(1, "SDL_RegisterEvents");
 
 	return renderer;
 }
@@ -51,61 +69,99 @@ static int32_t scancode(SDL_Scancode orig) {
 	return out;
 }
 
-void update_inputs() {
-	SDL_Event event;
-
-	lock();
-	while (SDL_PollEvent(&event)) {
-		switch (event.type) {
-		case SDL_QUIT:
-			k_state.quit = 1;
-			break;
-		case SDL_KEYDOWN:
-			k_state.key = scancode(event.key.keysym.scancode);
-			ring_push(&k_state.pressed, k_state.key);
-			break;
-		case SDL_KEYUP:
-			if (k_state.key == scancode(event.key.keysym.scancode))
-				k_state.key = -1;
-			ring_push(&k_state.released,
-				  scancode(event.key.keysym.scancode));
-			break;
-		default:
-			break;
-		}
-	}
-	unlock();
-}
-
-void update_renderer(SDL_Renderer* renderer) {
-	lock();
-
+static void update_renderer(struct render_state_sdl* r) {
 	SDL_Surface* surface =
-		SDL_CreateRGBSurfaceFrom(&k_state.framebuffer, 320, 200, 8, 320,
-					 0, 0, 0, 0);
-
+		SDL_CreateRGBSurfaceFrom(r->framebuffer, 320, 200, 8, 320, 0, 0,
+					 0, 0);
 	if (!surface)
 		errx(1, "SDL_CreateRGBSurfaceFrom: %s", SDL_GetError());
 
-	if (SDL_SetPaletteColors(k_state.sdl_palette, k_state.palette, 0, 256))
+	if (SDL_SetPaletteColors(r->sdl_palette, r->palette, 0, 256))
 		errx(1, "SDL_SetPaletteColors: %s", SDL_GetError());
 
-	unlock();
-
-	if (SDL_SetSurfacePalette(surface, k_state.sdl_palette))
+	if (SDL_SetSurfacePalette(surface, r->sdl_palette))
 		errx(1, "SDL_SetSurfacePalette: %s", SDL_GetError());
 
 	SDL_Texture* texture =
-		SDL_CreateTextureFromSurface(renderer, surface);
+		SDL_CreateTextureFromSurface(r->renderer, surface);
 	if (!texture)
 		errx(1, "SDL_CreateTextureFromSurface: %s", SDL_GetError());
 	SDL_FreeSurface(surface);
-
-	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
-	SDL_RenderClear(renderer);
-	SDL_RenderCopy(renderer, texture, 0, 0);
-	SDL_RenderPresent(renderer);
-
+	SDL_RenderCopy(r->renderer, texture, 0, 0);
 	SDL_DestroyTexture(texture);
+	SDL_RenderPresent(r->renderer);
 }
 
+static void update_inputs(struct k_state_t* k, struct render_state_sdl* r) {
+	SDL_Event event = {};
+
+	if (!SDL_WaitEvent(&event))
+		warnx("SDL_WaitEvent: %s", SDL_GetError());
+
+	k_lock(k);
+	if (event.type == SDL_QUIT) {
+		k->quit = 1;
+	} else if (event.type == SDL_KEYDOWN) {
+		k->key = scancode(event.key.keysym.scancode);
+		ring_push(&k->pressed, k->key);
+	} else if (event.type == SDL_KEYUP) {
+		if (k->key == scancode(event.key.keysym.scancode))
+			k->key = -1;
+		ring_push(&k->released, scancode(event.key.keysym.scancode));
+	}
+	k_unlock(k);
+
+	if (event.type == sdl_ev_swap_frontbuffer)
+		update_renderer(r);
+}
+
+static void set_palette(struct render_state* base, const uint32_t* arr,
+			size_t sze) {
+	struct render_state_sdl* r = (struct render_state_sdl*)base;
+
+	if (sze > ARRSZE(r->palette))
+		sze = ARRSZE(r->palette);
+
+	for (size_t i = 0; i < sze; i++) {
+		r->palette[i].b = (arr[i] & 0xff) >> 0;
+		r->palette[i].r = (arr[i] & 0xff0000) >> 16;
+		r->palette[i].g = (arr[i] & 0xff00) >> 8;
+	}
+}
+
+static void swap_frontbuffer(struct render_state* base, uint32_t* arr) {
+	struct render_state_sdl* r = (struct render_state_sdl*)base;
+	memcpy(&r->framebuffer, arr, sizeof(r->framebuffer));
+	if (SDL_PushEvent(&(SDL_Event){ .type = sdl_ev_swap_frontbuffer }) < 0)
+		warnx("SDL_PushEvent: %s", SDL_GetError());
+}
+
+void* render_thread(void* k_ptr) {
+	struct k_state_t* k = k_ptr;
+
+	k_lock(k);
+	struct render_state_sdl r = {
+		.base = {
+			.set_palette = set_palette,
+			.swap_frontbuffer = swap_frontbuffer,
+		},
+		.sdl_palette = SDL_AllocPalette(256),
+		.renderer = init_window(),
+	};
+	if (!r.sdl_palette)
+		errx(1, "SDL_AllocPalette: %s", SDL_GetError());
+
+	set_palette(&r.base, libvga_default_palette,
+		    ARRSZE(libvga_default_palette));
+
+	k->render_state = &r.base;
+
+	k_unlock(k);
+
+	while (!k->quit)
+		update_inputs(k, &r);
+
+	SDL_Quit();
+
+	return NULL;
+}
