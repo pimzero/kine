@@ -1,34 +1,24 @@
-HAVE_SDL3=y
-HAVE_SDL2=n
+# RENDERERS ?= sdl2
+RENDERERS ?= sdl3
 
-CFLAGS_SDL2=`pkg-config --cflags sdl2`
-LDLIBS_SDL2=`pkg-config --libs sdl2`
-OBJS_SDL2=sdl2.o
-RENDERERS_SDL2=sdl2
-CFLAGS_SDL3=`pkg-config --cflags sdl3`
-LDLIBS_SDL3=`pkg-config --libs sdl3`
-OBJS_SDL3=sdl3.o
-RENDERERS_SDL3=sdl3
-
-ifeq ($(HAVE_SDL2),y)
-ifeq ($(HAVE_SDL3),y)
-# SDL2 and SDL3 symbols conflict, therefore it is not possible to link against
-# both libraries.
-$(error SDL2 and SDL3 can't be enabled together)
-endif
-endif
-
-$(foreach renderer,SDL2 SDL3,$(foreach var,CFLAGS LDLIBS OBJS RENDERERS,$(eval $(var)-$(HAVE_$(renderer)) += $($(var)_$(renderer)))))
-
-CPPFLAGS=-D_GNU_SOURCE -MMD -DDEFAULT_RENDERER=\"$(firstword $(RENDERERS-y))\"
-CFLAGS=-std=c99 -Wall -Wextra -m32 $(CFLAGS-y)
+CPPFLAGS=-D_GNU_SOURCE -MMD -DDEFAULT_RENDERER=\"$(firstword $(RENDERERS))\"
+CFLAGS=-std=c99 -Wall -Wextra -m32
 LDFLAGS=-m32
-LDLIBS=-lpthread $(LDLIBS-y)
+LDLIBS=-lpthread
 
-OBJS=kine.o syscalls.o vgapalette.o $(OBJS-y)
+OBJS=kine.o syscalls.o vgapalette.o
 BIN=kine
 
 DEPS=$(OBJS:.o=.d)
+
+$(foreach renderer,$(RENDERERS),\
+	$(eval include $(renderer).mk) \
+	$(foreach var,CFLAGS LDLIBS OBJS, \
+		$(eval $(var) += $($(var)_$(renderer)))))
+$(foreach x,$(RENDERERS),\
+	$(foreach y,$(RENDERERS),\
+		$(if $(findstring $(x),$(CONFLICTS_$(y))), \
+			$(error Conflicting renderers "$(x)" and "$(y)" ))))
 
 all: $(BIN)
 
