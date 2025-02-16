@@ -85,6 +85,17 @@ static inline uint32_t align_up(uint32_t ptr) {
 	return (ptr + 0xfff) & ~(uint32_t)0xfff;
 }
 
-void* render_thread(void*);
+typedef void* (*render_thread)(struct k_state_t*);
+
+struct k_renderer {
+	const char* name;
+	const render_thread render_thread;
+};
+
+#define DEFINE_RENDERER(Name, Func) \
+	__attribute__((section("renderers"))) const struct k_renderer k_render_##Name = { \
+		.name = #Name, \
+		.render_thread = Func, \
+	};
 
 #endif

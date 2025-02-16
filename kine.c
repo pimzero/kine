@@ -305,6 +305,38 @@ static void* k_thread(void* fname) {
 	return NULL;
 }
 
+extern struct k_renderer __start_renderers, __stop_renderers;
+
+const char* list_renderers(void) {
+	static char* list = NULL;
+	if (list)
+		return list;
+
+	size_t sz = 0;
+	for (struct k_renderer* r = &__start_renderers; r < &__stop_renderers; r++)
+		sz += strlen(r->name) + 1;
+
+	list = calloc(1, sz);
+	if (!list)
+		err(1, "calloc");
+
+	for (struct k_renderer* r = &__start_renderers; r < &__stop_renderers; r++) {
+		if (r != &__start_renderers)
+			strcat(list, ",");
+		strcat(list, r->name);
+	}
+
+	return list;
+}
+
+static render_thread get_renderer(const char* name) {
+	for (struct k_renderer* r = &__start_renderers; r < &__stop_renderers; r++)
+		if (!strcmp(r->name, name))
+			return r->render_thread;
+
+	return NULL;
+}
+
 static uint32_t parse_ptr(const char* str) {
 	return strtol(str, NULL, 0);
 }
@@ -315,19 +347,22 @@ static void help(const char* argv0) {
 	"\n"
 	"Arguments:\n"
 	"  -h     \tShow this message\n"
-	"  -s     \tTrace syscalls\n"
-	"  -S addr\tStart value of stack pointer (default: %#x)\n"
-	"  -H addr\tStart value of heap pointer (default: %#x)\n"
-	"  -b addr\tAddress to load the rom (default: %#x)\n"
-	"  -l num \tSize (limit) of the rom's segment (in pages) (default: %#x)\n"
-	"  -T     \tRuns k on the main thread\n",
-	argv0, USER_ESP, USER_ESP, BASE, LIMIT);
+	"  -s         \tTrace syscalls\n"
+	"  -S addr    \tStart value of stack pointer (default: %#x)\n"
+	"  -H addr    \tStart value of heap pointer (default: %#x)\n"
+	"  -b addr    \tAddress to load the rom (default: %#x)\n"
+	"  -l num     \tSize (limit) of the rom's segment (in pages) (default: %#x)\n"
+	"  -T         \tRuns k on the main thread\n"
+	"  -r renderer\tSelects the renderer (one of: [%s], default: %s)\n",
+	argv0, USER_ESP, USER_ESP, BASE, LIMIT, list_renderers(), DEFAULT_RENDERER);
 }
 
 int main(int argc, char** argv) {
 	int opt;
 
-	while ((opt = getopt(argc, argv, "p:sS:H:b:hl:T")) != -1) {
+	void* (*render_thread)(struct k_state_t*) = NULL;
+
+	while ((opt = getopt(argc, argv, "p:sS:H:b:hl:Tr:")) != -1) {
 		switch (opt) {
 		case 'p':
 			config.path = strdup(optarg);
@@ -347,6 +382,13 @@ int main(int argc, char** argv) {
 		case 'T':
 			config.k_on_main_thread = 1;
 			break;
+		case 'r':
+			render_thread = get_renderer(optarg);
+			if (render_thread)
+				break;
+			warnx("Invalid renderer \"%s\"", optarg);
+			help(argv[0]);
+			exit(1);
 		default:
 			fprintf(stderr, "\n");
 			/* fallthrough */
@@ -359,9 +401,12 @@ int main(int argc, char** argv) {
 	if (!argv[optind])
 		errx(1, "missing rom file");
 
+	if (!render_thread)
+		render_thread = get_renderer(DEFAULT_RENDERER);
+
 	pthread_t tid;
 	if (config.k_on_main_thread) {
-		if (pthread_create(&tid, NULL, render_thread, &k_state) < 0)
+		if (pthread_create(&tid, NULL, (void* (*)(void*))render_thread, &k_state) < 0)
 			err(1, "pthread_create");
 
 		k_thread(argv[optind]);

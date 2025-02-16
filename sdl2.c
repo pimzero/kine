@@ -133,9 +133,7 @@ static void swap_frontbuffer(struct render_state* base, uint32_t* arr) {
 		warnx("SDL_PushEvent: %s", SDL_GetError());
 }
 
-void* render_thread(void* k_ptr) {
-	struct k_state_t* k = k_ptr;
-
+static void* render_thread_sdl2(struct k_state_t* k) {
 	struct render_state_sdl r = {
 		.base = {
 			.set_palette = set_palette,
@@ -163,3 +161,5 @@ void* render_thread(void* k_ptr) {
 
 	return NULL;
 }
+
+DEFINE_RENDERER(sdl2, render_thread_sdl2);

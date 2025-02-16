@@ -1,4 +1,4 @@
-CPPFLAGS=-D_GNU_SOURCE -MMD
+CPPFLAGS=-D_GNU_SOURCE -MMD -DDEFAULT_RENDERER=\"sdl2\"
 CFLAGS=-std=c99 -Wall -Wextra -m32 `pkg-config --cflags sdl2`
 LDFLAGS=-m32
 LDLIBS=`pkg-config --libs sdl2` -lpthread
