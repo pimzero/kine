@@ -64,12 +64,15 @@
 typedef void (*entry_t)(void);
 int32_t syscall_dispatch(uint32_t sysnr, uint32_t* args);
 
+static struct render_state render_state_default;
+
 struct k_state_t k_state = {
 	.lock = PTHREAD_MUTEX_INITIALIZER,
 	.video_mode = KVIDEO_TEXT,
 	.key = -1,
 	.pressed = RING_INITIALIZER,
-	.released = RING_INITIALIZER
+	.released = RING_INITIALIZER,
+	.render_state = &render_state_default,
 };
 
 struct config_t config = {
@@ -96,6 +99,25 @@ uint32_t getms(void) {
 
 	return tv.tv_sec * 1000 + tv.tv_usec / 1000;
 }
+
+static void busy_wait_ready_set_palette(struct render_state* r, const uint32_t* arr, size_t sze) {
+	(void) r;
+	while (k_state.render_state == &render_state_default)
+		;
+	k_state.render_state->set_palette(k_state.render_state, arr, sze);
+}
+
+static void wait_ready_swap_frontbuffer(struct render_state* r, uint32_t* arr) {
+	(void) r;
+	while (k_state.render_state == &render_state_default)
+		;
+	k_state.render_state->swap_frontbuffer(k_state.render_state, arr);
+}
+
+static struct render_state render_state_default = {
+	.set_palette = busy_wait_ready_set_palette,
+	.swap_frontbuffer = wait_ready_swap_frontbuffer,
+};
 
 static int set_syscall_user_dispatch(void* start, void* end) {
 	return prctl(PR_SET_SYSCALL_USER_DISPATCH, PR_SYS_DISPATCH_ON, start,

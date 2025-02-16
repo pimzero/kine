@@ -136,7 +136,6 @@ static void swap_frontbuffer(struct render_state* base, uint32_t* arr) {
 void* render_thread(void* k_ptr) {
 	struct k_state_t* k = k_ptr;
 
-	k_lock(k);
 	struct render_state_sdl r = {
 		.base = {
 			.set_palette = set_palette,
@@ -156,8 +155,6 @@ void* render_thread(void* k_ptr) {
 		    ARRSZE(libvga_default_palette));
 
 	k->render_state = &r.base;
-
-	k_unlock(k);
 
 	while (!k->quit)
 		update_inputs(k, &r);
