@@ -81,10 +81,6 @@ static inline int ring_pop(struct ring* rb, uint8_t* c) {
 
 uint32_t getms(void);
 
-static inline uint32_t align_up(uint32_t ptr) {
-	return (ptr + 0xfff) & ~(uint32_t)0xfff;
-}
-
 typedef void* (*render_thread)(struct k_state_t*);
 
 struct k_renderer {
