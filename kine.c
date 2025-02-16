@@ -305,7 +305,7 @@ static void* k_thread(void* fname) {
 	return NULL;
 }
 
-extern struct k_renderer __start_renderers, __stop_renderers;
+extern const struct k_renderer __start_renderers, __stop_renderers;
 
 const char* list_renderers(void) {
 	static char* list = NULL;
@@ -313,14 +313,16 @@ const char* list_renderers(void) {
 		return list;
 
 	size_t sz = 0;
-	for (struct k_renderer* r = &__start_renderers; r < &__stop_renderers; r++)
+	for (const struct k_renderer* r = &__start_renderers;
+	     r < &__stop_renderers; r++)
 		sz += strlen(r->name) + 1;
 
 	list = calloc(1, sz);
 	if (!list)
 		err(1, "calloc");
 
-	for (struct k_renderer* r = &__start_renderers; r < &__stop_renderers; r++) {
+	for (const struct k_renderer* r = &__start_renderers;
+	     r < &__stop_renderers; r++) {
 		if (r != &__start_renderers)
 			strcat(list, ",");
 		strcat(list, r->name);
@@ -330,7 +332,8 @@ const char* list_renderers(void) {
 }
 
 static render_thread get_renderer(const char* name) {
-	for (struct k_renderer* r = &__start_renderers; r < &__stop_renderers; r++)
+	for (const struct k_renderer* r = &__start_renderers;
+	     r < &__stop_renderers; r++)
 		if (!strcmp(r->name, name))
 			return r->render_thread;
 
