@@ -26,10 +26,9 @@ struct render_state_sdl {
 	SDL_Color palette[256];
 	SDL_Palette* sdl_palette;
 	SDL_Renderer* renderer;
+	uint32_t sdl_ev_swap_frontbuffer;
 	uint32_t framebuffer[320 * 200];
 };
-
-static uint32_t sdl_ev_swap_frontbuffer;
 
 static SDL_Renderer* init_window(void) {
 	if (SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1") == SDL_FALSE)
@@ -47,10 +46,6 @@ static SDL_Renderer* init_window(void) {
 	SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, 0);
 	if (!renderer)
 		errx(1, "SDL_CreateRenderer: %s", SDL_GetError());
-
-	sdl_ev_swap_frontbuffer = SDL_RegisterEvents(1);
-	if (sdl_ev_swap_frontbuffer == (uint32_t)-1)
-		errx(1, "SDL_RegisterEvents");
 
 	return renderer;
 }
@@ -111,7 +106,7 @@ static void update_inputs(struct k_state_t* k, struct render_state_sdl* r) {
 	}
 	k_unlock(k);
 
-	if (event.type == sdl_ev_swap_frontbuffer)
+	if (event.type == r->sdl_ev_swap_frontbuffer)
 		update_renderer(r);
 }
 
@@ -134,7 +129,7 @@ static void swap_frontbuffer(struct render_state* base, uint32_t* arr) {
 	struct render_state_sdl* r =
 		container_of(base, struct render_state_sdl, base);
 	memcpy(&r->framebuffer, arr, sizeof(r->framebuffer));
-	if (SDL_PushEvent(&(SDL_Event){ .type = sdl_ev_swap_frontbuffer }) < 0)
+	if (SDL_PushEvent(&(SDL_Event){ .type = r->sdl_ev_swap_frontbuffer }) < 0)
 		warnx("SDL_PushEvent: %s", SDL_GetError());
 }
 
@@ -152,6 +147,10 @@ void* render_thread(void* k_ptr) {
 	};
 	if (!r.sdl_palette)
 		errx(1, "SDL_AllocPalette: %s", SDL_GetError());
+
+	r.sdl_ev_swap_frontbuffer = SDL_RegisterEvents(1);
+	if (r.sdl_ev_swap_frontbuffer == (uint32_t)-1)
+		errx(1, "SDL_RegisterEvents");
 
 	set_palette(&r.base, libvga_default_palette,
 		    ARRSZE(libvga_default_palette));
