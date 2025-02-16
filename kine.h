@@ -19,8 +19,12 @@
 
 #include <stdint.h>
 #include <pthread.h>
+#include <stddef.h>
 
 #define ARRSZE(X) (sizeof(X) / sizeof(*(X)))
+
+#define container_of(ptr, type, member) \
+	((type *)(((void *)(ptr)) - offsetof(type, member)))
 
 struct ring {
 	uint8_t buf[256];

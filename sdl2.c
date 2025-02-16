@@ -117,7 +117,8 @@ static void update_inputs(struct k_state_t* k, struct render_state_sdl* r) {
 
 static void set_palette(struct render_state* base, const uint32_t* arr,
 			size_t sze) {
-	struct render_state_sdl* r = (struct render_state_sdl*)base;
+	struct render_state_sdl* r =
+		container_of(base, struct render_state_sdl, base);
 
 	if (sze > ARRSZE(r->palette))
 		sze = ARRSZE(r->palette);
@@ -130,7 +131,8 @@ static void set_palette(struct render_state* base, const uint32_t* arr,
 }
 
 static void swap_frontbuffer(struct render_state* base, uint32_t* arr) {
-	struct render_state_sdl* r = (struct render_state_sdl*)base;
+	struct render_state_sdl* r =
+		container_of(base, struct render_state_sdl, base);
 	memcpy(&r->framebuffer, arr, sizeof(r->framebuffer));
 	if (SDL_PushEvent(&(SDL_Event){ .type = sdl_ev_swap_frontbuffer }) < 0)
 		warnx("SDL_PushEvent: %s", SDL_GetError());
