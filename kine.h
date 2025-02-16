@@ -62,7 +62,7 @@ void k_lock(struct k_state_t*);
 void k_unlock(struct k_state_t*);
 
 static inline int ring_push(struct ring* rb, uint8_t c) {
-	if ((rb->z + 1) % 256 == rb->a)
+	if ((rb->z + 1) % ARRSZE(rb->buf) == rb->a)
 		return -1;
 
 	rb->buf[rb->z++] = c;
@@ -71,7 +71,7 @@ static inline int ring_push(struct ring* rb, uint8_t c) {
 }
 
 static inline int ring_pop(struct ring* rb, uint8_t* c) {
-	if ((rb->a + 1) % 256 == rb->z)
+	if ((rb->a + 1) % ARRSZE(rb->buf) == rb->z)
 		return -1;
 
 	*c = rb->buf[++rb->a];
