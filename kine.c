@@ -357,13 +357,14 @@ static void help(const char* argv0) {
 	"  -l num     \tSize (limit) of the rom's segment (in pages) (default: %#x)\n"
 	"  -T         \tRuns k on the main thread\n"
 	"  -r renderer\tSelects the renderer (one of: [%s], default: %s)\n",
-	argv0, USER_ESP, USER_ESP, BASE, LIMIT, list_renderers(), DEFAULT_RENDERER);
+	argv0, USER_ESP, USER_ESP, BASE, LIMIT, list_renderers(),
+	__start_renderers.name);
 }
 
 int main(int argc, char** argv) {
 	int opt;
 
-	void* (*render_thread)(struct k_state_t*) = NULL;
+	void* (*render_thread)(struct k_state_t*) = __start_renderers.render_thread;
 
 	while ((opt = getopt(argc, argv, "p:sS:H:b:hl:Tr:")) != -1) {
 		switch (opt) {
@@ -403,9 +404,6 @@ int main(int argc, char** argv) {
 
 	if (!argv[optind])
 		errx(1, "missing rom file");
-
-	if (!render_thread)
-		render_thread = get_renderer(DEFAULT_RENDERER);
 
 	pthread_t tid;
 	if (config.k_on_main_thread) {

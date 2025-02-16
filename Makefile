@@ -1,7 +1,7 @@
 # RENDERERS ?= sdl2
 RENDERERS ?= sdl3
 
-CPPFLAGS=-D_GNU_SOURCE -MMD -DDEFAULT_RENDERER=\"$(firstword $(RENDERERS))\"
+CPPFLAGS=-D_GNU_SOURCE -MMD
 CFLAGS=-std=c99 -Wall -Wextra -m32
 LDFLAGS=-m32
 LDLIBS=-lpthread
@@ -13,8 +13,9 @@ DEPS=$(OBJS:.o=.d)
 
 $(foreach renderer,$(RENDERERS),\
 	$(eval include $(renderer).mk) \
-	$(foreach var,CFLAGS LDLIBS OBJS, \
-		$(eval $(var) += $($(var)_$(renderer)))))
+	$(foreach var,LDLIBS OBJS, \
+		$(eval $(var) += $($(var)_$(renderer))))\
+	$(eval $(OBJS_$(renderer)): CFLAGS += $(CFLAGS_$(renderer))))
 $(foreach x,$(RENDERERS),\
 	$(foreach y,$(RENDERERS),\
 		$(if $(findstring $(x),$(CONFLICTS_$(y))), \
