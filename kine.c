@@ -15,6 +15,7 @@
  */
 
 #include <asm/ldt.h>
+#include <asm/prctl.h>
 #include <elf.h>
 #include <err.h>
 #include <fcntl.h>
@@ -25,6 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <syscall.h>
+#include <sys/auxv.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/stat.h>
@@ -44,6 +46,9 @@
 #ifndef PR_SYS_DISPATCH_ON
 #define PR_SYS_DISPATCH_ON 1
 #endif
+#ifndef HWCAP2_FSGSBASE
+#define HWCAP2_FSGSBASE        (1 << 1)
+#endif
 
 #define PROT_RWX (PROT_READ|PROT_WRITE|PROT_EXEC)
 
@@ -53,7 +58,7 @@
 
 #define SEGMENT_CODE 1
 #define SEGMENT_DATA 2
-#define SEGMENT_LINUX_GS 12 /* TODO: This is only correct on x86-64 */
+#define SEGMENT_LINUX_GS 12
 
 #define SEGMENT_LDT (1 << 2)
 #define SEGMENT_GDT 0
@@ -128,43 +133,92 @@ static int modify_ldt(int func, struct user_desc* ptr, unsigned long count) {
     return syscall(SYS_modify_ldt, func, ptr, count);
 }
 
-void sigsys_handler_asm(int, siginfo_t*, void*);
+#ifdef __x86_64__
+static int supports_fsgsbase(void) {
+	return !!(getauxval(AT_HWCAP2) & HWCAP2_FSGSBASE);
+}
+#endif
 
-__asm__(".pushsection .text\n"
-"sigsys_handler_asm:\n\t"
-"push %ebp\n\t"
-"mov %esp, %ebp\n\t"
+#ifdef __x86_64__
+#define R(R) "%r"#R
+#else
+#define R(R) "%e"#R
+#endif
 
+#define MAKE_SIGSYS_HANDLER_ASM(Name, Prepare)		\
+void Name(int sig, siginfo_t *info, void *ucontext);	\
+							\
+__asm__(						\
+".pushsection .text\n"					\
+#Name ":\n\t"						\
+"push " R(bp) "\n\t"					\
+"mov " R(sp) ", " R(bp) "\n\t"			\
+							\
+Prepare							\
+							\
+"call sigsys_handler\n\t"				\
+							\
+"mov $" XSTR(SEG_REG(DATA, LDT, 3)) ", %bx\n\t"		\
+"mov %bx, %fs\n\t"					\
+"mov %bx, %gs\n\t"					\
+							\
+"leave\n\t"						\
+"ret\n"							\
+".popsection\n"						\
+)
+
+#ifdef __x86_64__
+
+MAKE_SIGSYS_HANDLER_ASM(sigsys_handler_asm,
+"push %rdi\n\t"
+"push %rsi\n\t"
+"push %rdx\n\t"
+
+"mov $" XSTR(SYS_arch_prctl) ", %rax\n\t"
+"mov $" XSTR(ARCH_SET_FS) ", %rdi\n\t"
+"mov k_thread_fs(%rip), %rsi\n\t"
+"syscall\n\t"
+
+"pop %rsi\n\t" /* ucontext */
+"pop %rdi\n\t" /* siginfo */
+"add $8, %rsp\n\t");
+
+MAKE_SIGSYS_HANDLER_ASM(sigsys_handler_asm_fsgsbase,
+"mov k_thread_fs(%rip), %rdi\n\t"
+"wrfsbase %rdi\n\t"
+"mov %rsi, %rdi\n\t"
+"mov %rdx, %rsi\n\t");
+
+#else
+
+MAKE_SIGSYS_HANDLER_ASM(sigsys_handler_asm,
 "mov $0, %bx\n\t"
 "mov %bx, %fs\n\t"
 "mov $" XSTR(SEG_REG(LINUX_GS, GDT, 3)) ", %bx\n\t"
 "mov %bx, %gs\n\t"
 
 "push 16(%ebp)\n\t" /* ctx */
-"push 12(%ebp)\n\t" /* siginfo */
+"push 12(%ebp)\n\t" /* siginfo */);
 
-"call sigsys_handler\n\t"
-
-"mov $" XSTR(SEG_REG(DATA, LDT, 3)) ", %bx\n\t"
-"mov %bx, %fs\n\t"
-"mov %bx, %gs\n\t"
-
-"leave\n\t"
-"ret\n"
-".popsection\n"
-);
+#endif
 
 __attribute__ ((used))
 static void sigsys_handler(siginfo_t* siginfo, struct ucontext_t* ctx) {
+#ifdef __x86_64__
+#define REG(X) REG_R##X
+#else
+#define REG(X) REG_E##X
+#endif
 	uint32_t args[] = {
-		ctx->uc_mcontext.gregs[REG_EBX],
-		ctx->uc_mcontext.gregs[REG_ECX],
-		ctx->uc_mcontext.gregs[REG_EDX],
-		ctx->uc_mcontext.gregs[REG_ESI],
+		ctx->uc_mcontext.gregs[REG(BX)],
+		ctx->uc_mcontext.gregs[REG(CX)],
+		ctx->uc_mcontext.gregs[REG(DX)],
+		ctx->uc_mcontext.gregs[REG(SI)],
 	};
 
-	ctx->uc_mcontext.gregs[REG_EAX] =
+	ctx->uc_mcontext.gregs[REG(AX)] =
 		syscall_dispatch(siginfo->si_syscall, args);
+#undef REG
 }
 
 static void readat(int fd, size_t off, void* buf, size_t count) {
@@ -221,12 +275,12 @@ static entry_t load_elf(const char* fname) {
 	k_state.brk = config.brk;
 
 	if (set_syscall_user_dispatch((char*)config.base + config.limit * 4096,
-				      (void*)-1) < 0)
+				      (void*)~(0x1ULL<<63)) < 0)
 		err(1, "set_syscall_user_dispatch");
 
 	close(fd);
 
-	return (entry_t)ehdr.e_entry;
+	return (entry_t)(uintptr_t)ehdr.e_entry;
 }
 
 static void set_ldt_entry(unsigned nr, unsigned content,
@@ -244,11 +298,12 @@ static void set_ldt_entry(unsigned nr, unsigned content,
 		err(1, "modify_ldt");
 }
 
+__attribute((noreturn))
 static void k_start(entry_t entry) {
 	k_state.starttime = getms();
 
 	__asm__ volatile(
-	"mov $" XSTR(SEG_REG(DATA, LDT, 3)) ", %%bx\n\t"
+	"mov $" XSTR(SEG_REG(DATA, LDT, 3)) ", %%ebx\n\t"
 	"mov %%bx, %%ss\n\t"
 	"mov %%bx, %%ds\n\t"
 	"mov %%bx, %%es\n\t"
@@ -256,8 +311,8 @@ static void k_start(entry_t entry) {
 	"mov %%bx, %%gs\n\t"
 
 	"mov %[sp], %%esp\n\t"
-	"pushl $" XSTR(SEG_REG(CODE, LDT, 3)) "\n\t"
-	"pushl %[entry]\n\t"
+	"push $" XSTR(SEG_REG(CODE, LDT, 3)) "\n\t"
+	"push %[entry]\n\t"
 
 	"xor %%eax, %%eax\n\t"
 	"xor %%ebx, %%ebx\n\t"
@@ -266,10 +321,16 @@ static void k_start(entry_t entry) {
 	"xor %%esi, %%esi\n\t"
 	"xor %%edi, %%edi\n\t"
 	"xor %%ebp, %%ebp\n\t"
+#ifdef __x86_64__
+	"lretq\n\t"
+#else
 	"lret\n\t"
+#endif
 	: /* outputs */
-	: [entry]"r"(entry), [sp]"r"(config.sp)
-	: "memory");
+	: [entry]"r"(entry), [sp]"r"((uint32_t)config.sp)
+	: "memory", "ebx");
+
+	_Exit(1);
 }
 
 static void k_setup_sighandler(void) {
@@ -288,14 +349,31 @@ static void k_setup_sighandler(void) {
 		.sa_sigaction = sigsys_handler_asm,
 		.sa_flags = SA_SIGINFO|SA_ONSTACK,
 	};
+#if __x86_64__
+	if (supports_fsgsbase())
+		sa.sa_sigaction = sigsys_handler_asm_fsgsbase;
+#endif
 	if (sigaction(SIGSYS, &sa, NULL) < 0)
 		err(1, "sigaction");
 }
+
+#if __x86_64__
+static unsigned long k_thread_fs;
+
+static int arch_prctl(int op, unsigned long* addr) {
+	return syscall(SYS_arch_prctl, op, addr);
+}
+#endif
 
 static void* k_thread(void* fname) {
 	entry_t entry = load_elf(fname);
 
 	k_setup_sighandler();
+
+#if __x86_64__
+	if (arch_prctl(ARCH_GET_FS, &k_thread_fs) < 0)
+		err(1, "arch_prctl(ARCH_GET_FS)");
+#endif
 
 	set_ldt_entry(SEGMENT_CODE, 2, 1);
 	set_ldt_entry(SEGMENT_DATA, 0, 0);

@@ -55,7 +55,7 @@ struct config_t {
 	char* path;
 	int strace, k_on_main_thread;
 
-	uint32_t base, limit, sp, brk;
+	uintptr_t base, limit, sp, brk;
 };
 
 void k_lock(struct k_state_t*);

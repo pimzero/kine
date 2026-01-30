@@ -2,8 +2,7 @@
 RENDERERS ?= sdl3
 
 CPPFLAGS=-D_GNU_SOURCE -MMD
-CFLAGS=-std=c99 -Wall -Wextra -m32
-LDFLAGS=-m32
+CFLAGS=-std=c99 -Wall -Wextra
 LDLIBS=-lpthread
 
 OBJS=kine.o syscalls.o vgapalette.o
