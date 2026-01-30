@@ -33,14 +33,18 @@ extern struct k_state_t k_state;
 typedef int32_t (*syscall_t)();
 
 static void* get_user(uint32_t ptr) {
+	if (ptr >= config.limit * 4096)
+		return NULL;
 	return (void*)(ptr + config.base);
 }
 
-static int32_t sys_write(uint32_t buf, size_t len) {
-	void* buf_ptr = get_user(buf);
-
+static int32_t sys_write(uint32_t buf, uint32_t len) {
 	if (config.strace)
-		fprintf(stderr, "write(%p)\n", buf_ptr);
+		fprintf(stderr, "write(%#x, %u)\n", buf, len);
+
+	void* buf_ptr = get_user(buf);
+	if (!buf_ptr)
+		return -KEINVAL;
 
 	return write(1, buf_ptr, len);
 }
@@ -67,22 +71,26 @@ static int32_t sys_open(uint32_t pathname, int flags) {
 	(void) flags;
 
 	char* pathname_ptr = get_user(pathname);
+	if (!pathname_ptr)
+		goto exit;
 
 	char path[2048];
 
 	snprintf(path, sizeof(path) - 1, "%s%s", config.path, pathname_ptr);
 
 	int ret = open(path, O_RDONLY);
-	if (ret < 0)
+	if (ret < 0) {
 		ret = -KENOENT;
+		goto exit;
+	}
 
-	struct stat st = { 0 };
-	fstat(ret, &st);
-	if (S_ISDIR(st.st_mode)) {
+	struct stat st;
+	if ((fstat(ret, &st) < 0) || S_ISDIR(st.st_mode)) {
 		close(ret);
 		ret = -KENOENT;
 	}
 
+exit:
 	if (config.strace)
 		fprintf(stderr, "open(%s) = %d\n", pathname_ptr, ret);
 
@@ -100,22 +108,26 @@ static int32_t sys_close(int fd) {
 
 static int32_t sys_swap_frontbuffer(uint32_t buffer) {
 	if (config.strace)
-		fprintf(stderr, "swap_frontbuffer()\n");
+		fprintf(stderr, "swap_frontbuffer(%#x)\n", buffer);
 
-	k_state.render_state->swap_frontbuffer(k_state.render_state, get_user(buffer));
+	uint32_t *arr = get_user(buffer);
+	if (!arr)
+		return -KEINVAL;
+
+	k_state.render_state->swap_frontbuffer(k_state.render_state, arr);
 
 	return 0;
 }
 
 static int32_t sys_read(int fd, uint32_t buf, uint32_t count) {
+	if (config.strace)
+		fprintf(stderr, "read(%d, %#x, %u)\n", fd, buf, count);
+
 	void* buf_ptr = get_user(buf);
+	if (!buf_ptr)
+		return -KEINVAL;
 
 	int ret = read(fd, buf_ptr, count);
-
-	if (config.strace)
-		fprintf(stderr, "read(%d, %p, %u) = %d\n", fd, buf_ptr,
-			count, ret);
-
 	if (ret < 0) {
 		switch (ret) {
 		case EBADF:
@@ -189,10 +201,13 @@ static int32_t sys_getkey(void) {
 	return out;
 }
 
-static uint32_t sys_set_palette(uint32_t palette, size_t sze) {
+static uint32_t sys_set_palette(uint32_t palette, uint32_t sze) {
 	uint32_t* arr = get_user(palette);
 	if (config.strace)
-		fprintf(stderr, "set_palette(%x, %zu)\n", palette, sze);
+		fprintf(stderr, "set_palette(%#x, %u)\n", palette, sze);
+
+	if (!arr)
+		return -KEINVAL;
 
 	k_lock(&k_state);
 	k_state.render_state->set_palette(k_state.render_state, arr, sze);
@@ -202,8 +217,13 @@ static uint32_t sys_set_palette(uint32_t palette, size_t sze) {
 }
 
 static int32_t sys_readkey(uint32_t uaddr) {
+	if (config.strace)
+		fprintf(stderr, "readkey(%#x)\n", uaddr);
+
 	int32_t out = -KEAGAIN;
 	struct key_event *ev = get_user(uaddr);
+	if (!ev)
+		return -KEINVAL;
 
 	k_lock(&k_state);
 	uint8_t c = 0;
@@ -216,10 +236,6 @@ static int32_t sys_readkey(uint32_t uaddr) {
 	out = 0;
 unlock:
 	k_unlock(&k_state);
-
-	if (config.strace)
-		fprintf(stderr, "readkey({.state=%d, .key=%#x}) = %d\n",
-			ev->state, ev->key, out);
 
 	return out;
 }
