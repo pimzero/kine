@@ -201,18 +201,25 @@ static uint32_t sys_set_palette(uint32_t palette, size_t sze) {
 	return 0;
 }
 
-static int32_t sys_getkeymode(int released) {
+static int32_t sys_readkey(uint32_t uaddr) {
 	int32_t out = -KEAGAIN;
-	struct ring* r = released ? &k_state.released : &k_state.pressed ;
+	struct key_event *ev = get_user(uaddr);
 
 	k_lock(&k_state);
 	uint8_t c = 0;
-	if (ring_pop(r, &c) >= 0)
-		out = c;
+	if (ring_pop(&k_state.keys, &c) < 0)
+		goto unlock;
+
+	ev->state = c & FLAG_KEY_RELEASED ? KEY_RELEASED : KEY_PRESSED;
+	ev->key = c & ~FLAG_KEY_RELEASED;
+
+	out = 0;
+unlock:
 	k_unlock(&k_state);
 
 	if (config.strace)
-		fprintf(stderr, "getkeymode(%d) = %d\n", released, out);
+		fprintf(stderr, "readkey({.state=%d, .key=%#x}) = %d\n",
+			ev->state, ev->key, out);
 
 	return out;
 }
@@ -233,7 +240,7 @@ static syscall_t syscalls[] = {
 	[KSYSCALL_PLAYSOUND] = (syscall_t)not_implemented, /* not implemented */
 	[KSYSCALL_SETPALETTE] = (syscall_t)sys_set_palette,
 	[KSYSCALL_GETMOUSE] = (syscall_t)not_implemented, /* not implemented */
-	[14] = (syscall_t)sys_getkeymode,
+	[KSYSCALL_READKEY] = (syscall_t)sys_readkey,
 };
 
 int32_t syscall_dispatch(uint32_t sysnr, uint32_t* args) {

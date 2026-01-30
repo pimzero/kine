@@ -75,8 +75,7 @@ struct k_state_t k_state = {
 	.lock = PTHREAD_MUTEX_INITIALIZER,
 	.video_mode = KVIDEO_TEXT,
 	.key = -1,
-	.pressed = RING_INITIALIZER,
-	.released = RING_INITIALIZER,
+	.keys = RING_INITIALIZER,
 	.render_state = &render_state_default,
 };
 

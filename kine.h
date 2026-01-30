@@ -44,7 +44,7 @@ struct k_state_t {
 	int32_t key;
 	struct render_state* render_state;
 
-	struct ring pressed, released;
+	struct ring keys;
 
 	/* unlocked */
 	uint32_t brk; /* only accessed by k_thread */
@@ -93,5 +93,7 @@ struct k_renderer {
 		.name = #Name, \
 		.render_thread = Func, \
 	};
+
+#define FLAG_KEY_RELEASED 0x80
 
 #endif

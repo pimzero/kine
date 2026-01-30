@@ -98,11 +98,12 @@ static void update_inputs(struct k_state_t* k, struct render_state_sdl* r) {
 		k->quit = 1;
 	} else if (event.type == SDL_KEYDOWN) {
 		k->key = scancode(event.key.keysym.scancode);
-		ring_push(&k->pressed, k->key);
+		ring_push(&k->keys, k->key);
 	} else if (event.type == SDL_KEYUP) {
 		if (k->key == scancode(event.key.keysym.scancode))
 			k->key = -1;
-		ring_push(&k->released, scancode(event.key.keysym.scancode));
+		ring_push(&k->keys, scancode(event.key.keysym.scancode) |
+			  FLAG_KEY_RELEASED);
 	}
 	k_unlock(k);
 
