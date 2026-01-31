@@ -39,6 +39,29 @@ static void* get_user(uint32_t ptr) {
 	return (void*)(ptr + config.base);
 }
 
+static int32_t errno2k(int32_t r)
+{
+	if (r >= 0)
+		return r;
+
+	switch (errno) {
+	case ENOMEM:
+		return -KENOMEM;
+	case ENOENT:
+		return -KENOENT;
+	case EIO:
+		return -KEIO;
+	case EBADF:
+		return -KEBADF;
+	case EAGAIN:
+		return -KEAGAIN;
+	case EINVAL:
+	default:
+		return -KEINVAL;
+	/* ENOSYS: should not happen. */
+	}
+}
+
 static int32_t sys_write(uint32_t buf, uint32_t len) {
 	if (config.strace)
 		fprintf(stderr, "write(%#x, %u)\n", buf, len);
@@ -47,7 +70,7 @@ static int32_t sys_write(uint32_t buf, uint32_t len) {
 	if (!buf_ptr)
 		return -KEINVAL;
 
-	return write(1, buf_ptr, len);
+	return errno2k(write(1, buf_ptr, len));
 }
 
 static int32_t sys_setvideo(int type) {
@@ -96,11 +119,9 @@ static int32_t sys_open(uint32_t pathname, int flags) {
 
 	snprintf(path, sizeof(path) - 1, "%s%s", config.path, pathname_ptr);
 
-	int ret = open(path, O_RDONLY);
-	if (ret < 0) {
-		ret = -KENOENT;
+	int ret = errno2k(open(path, O_RDONLY));
+	if (ret < 0)
 		goto exit;
-	}
 
 	struct stat st;
 	if ((fstat(ret, &st) < 0) || S_ISDIR(st.st_mode)) {
@@ -119,9 +140,7 @@ static int32_t sys_close(int fd) {
 	if (config.strace)
 		fprintf(stderr, "close(%d)\n", fd);
 
-	close(fd);
-
-	return 0;
+	return errno2k(close(fd));
 }
 
 static int32_t sys_swap_frontbuffer(uint32_t buffer) {
@@ -145,20 +164,7 @@ static int32_t sys_read(int fd, uint32_t buf, uint32_t count) {
 	if (!buf_ptr)
 		return -KEINVAL;
 
-	int ret = read(fd, buf_ptr, count);
-	if (ret < 0) {
-		switch (ret) {
-		case EBADF:
-			ret = -KEBADF;
-			break;
-		case EINVAL:
-		default:
-			ret = -KEINVAL;
-			break;
-		}
-	}
-
-	return ret;
+	return errno2k(read(fd, buf_ptr, count));
 }
 
 static uint32_t sys_sbrk(int32_t inc) {
@@ -201,7 +207,7 @@ static int32_t sys_seek(int fd, int32_t off, int whence) {
 		return -KEINVAL;
 	};
 
-	return lseek(fd, off, whence);
+	return errno2k(lseek(fd, off, whence));
 }
 
 static int32_t sys_getkey(void) {
