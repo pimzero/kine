@@ -18,10 +18,12 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <linux/openat2.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 #include "kine.h"
@@ -91,18 +93,9 @@ static int32_t sys_setvideo(int type) {
 	}
 }
 
-static int path_valid(const char *path, size_t max_len) {
-	/*
-	 * We only allow absolute paths, and don't allow "..", to avoid path
-	 * traversals.
-	 */
-	if (path[0] != '/')
-		return 0;
-
-	if (!memchr(path, 0, max_len))
-		return 0;
-
-	return !strstr(path, "/..");
+static long openat2(int dirfd, const char *path, struct open_how *how,
+		    size_t size) {
+	return syscall(SYS_openat2, dirfd, path, how, size);
 }
 
 static int32_t sys_open(uint32_t pathname, int flags) {
@@ -112,10 +105,12 @@ static int32_t sys_open(uint32_t pathname, int flags) {
 	if (!pathname_ptr)
 		goto exit;
 
-	if (!path_valid(pathname_ptr, PATH_MAX))
-		goto exit;
+	struct open_how how = {
+		.resolve = RESOLVE_IN_ROOT|RESOLVE_NO_MAGICLINKS,
+		.mode = O_RDONLY,
+	};
 
-	int ret = errno2k(openat(config.root, pathname_ptr + 1, O_RDONLY));
+	int ret = errno2k(openat2(config.root, pathname_ptr, &how, sizeof(how)));
 	if (ret < 0)
 		goto exit;
 
