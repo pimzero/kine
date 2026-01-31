@@ -52,7 +52,7 @@ struct k_state_t {
 };
 
 struct config_t {
-	char* path;
+	int root;
 	int strace, k_on_main_thread;
 
 	uintptr_t base, limit, sp, brk;

@@ -80,7 +80,7 @@ struct k_state_t k_state = {
 };
 
 struct config_t config = {
-	.path = ".",
+	.root = -1,
 	.base = BASE,
 	.limit = LIMIT,
 	.sp = USER_ESP,
@@ -446,7 +446,10 @@ int main(int argc, char** argv) {
 	while ((opt = getopt(argc, argv, "p:sS:H:b:hl:Tr:")) != -1) {
 		switch (opt) {
 		case 'p':
-			config.path = strdup(optarg);
+			if (config.root != -1)
+				errx(1, "-p can only be specified once");
+			if ((config.root = open(optarg, O_RDONLY)) < 0)
+				err(1, "open(%s)", optarg);
 			break;
 		case 'S': /* stack */
 			config.sp = parse_ptr(optarg);
@@ -478,6 +481,8 @@ int main(int argc, char** argv) {
 			exit(opt != 'h');
 		}
 	}
+	if (config.root == -1)
+		errx(1, "Argument -p must be specfied");
 
 	if (!argv[optind])
 		errx(1, "missing rom file");

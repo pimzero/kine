@@ -112,14 +112,10 @@ static int32_t sys_open(uint32_t pathname, int flags) {
 	if (!pathname_ptr)
 		goto exit;
 
-	char path[PATH_MAX];
-
-	if (!path_valid(pathname_ptr, sizeof(path) - strlen(config.path)))
+	if (!path_valid(pathname_ptr, PATH_MAX))
 		goto exit;
 
-	snprintf(path, sizeof(path) - 1, "%s%s", config.path, pathname_ptr);
-
-	int ret = errno2k(open(path, O_RDONLY));
+	int ret = errno2k(openat(config.root, pathname_ptr + 1, O_RDONLY));
 	if (ret < 0)
 		goto exit;
 
