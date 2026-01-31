@@ -17,6 +17,7 @@
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -67,6 +68,20 @@ static int32_t sys_setvideo(int type) {
 	}
 }
 
+static int path_valid(const char *path, size_t max_len) {
+	/*
+	 * We only allow absolute paths, and don't allow "..", to avoid path
+	 * traversals.
+	 */
+	if (path[0] != '/')
+		return 0;
+
+	if (!memchr(path, 0, max_len))
+		return 0;
+
+	return !strstr(path, "/..");
+}
+
 static int32_t sys_open(uint32_t pathname, int flags) {
 	(void) flags;
 
@@ -74,7 +89,10 @@ static int32_t sys_open(uint32_t pathname, int flags) {
 	if (!pathname_ptr)
 		goto exit;
 
-	char path[2048];
+	char path[PATH_MAX];
+
+	if (!path_valid(pathname_ptr, sizeof(path) - strlen(config.path)))
+		goto exit;
 
 	snprintf(path, sizeof(path) - 1, "%s%s", config.path, pathname_ptr);
 
