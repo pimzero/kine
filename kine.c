@@ -448,7 +448,7 @@ int main(int argc, char** argv) {
 		case 'p':
 			if (config.root != -1)
 				errx(1, "-p can only be specified once");
-			if ((config.root = open(optarg, O_RDONLY)) < 0)
+			if ((config.root = open(optarg, O_RDONLY|O_DIRECTORY|O_PATH)) < 0)
 				err(1, "open(%s)", optarg);
 			break;
 		case 'S': /* stack */
