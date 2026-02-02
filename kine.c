@@ -255,7 +255,7 @@ static entry_t load_elf(const char* fname) {
 		errx(1, "invalid file \"%s\"", fname);
 
 	void* map = mmap((void*)config.base, config.limit * 4096, PROT_RWX,
-			 MAP_PRIVATE|MAP_FIXED|MAP_ANON, -1, 0);
+			 MAP_PRIVATE|MAP_FIXED_NOREPLACE|MAP_ANON, -1, 0);
 	if (!map)
 		err(1, "mmap");
 
