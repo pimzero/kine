@@ -79,6 +79,11 @@ struct k_state_t k_state = {
 	.render_state = &render_state_default,
 };
 
+static void init_k_state_t(struct k_state_t *state) {
+	for (size_t i = 0; i < ARRSZE(state->fds); i++)
+		state->fds[i] = -1;
+}
+
 struct config_t config = {
 	.root = -1,
 	.base = BASE,
@@ -481,6 +486,8 @@ int main(int argc, char** argv) {
 
 	if (!argv[optind])
 		errx(1, "missing rom file");
+
+	init_k_state_t(&k_state);
 
 	pthread_t tid;
 	if (config.k_on_main_thread) {

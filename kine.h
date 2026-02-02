@@ -49,6 +49,8 @@ struct k_state_t {
 	/* unlocked */
 	uint32_t brk; /* only accessed by k_thread */
 	uint32_t starttime; /* only read */
+
+	int fds[64];
 };
 
 struct config_t {

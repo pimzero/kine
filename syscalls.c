@@ -21,7 +21,6 @@
 #include <linux/openat2.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -64,6 +63,11 @@ static int32_t errno2k(int32_t r)
 	}
 }
 
+#define ON_FD(Fn, Fd, ...) ({ \
+		(Fd) > ARRSZE(k_state.fds) ? -KEBADF : \
+		errno2k((Fn)(k_state.fds[(Fd)] __VA_OPT__(,) __VA_ARGS__)); \
+	})
+
 static int32_t sys_write(uint32_t buf, uint32_t len) {
 	if (config.strace)
 		fprintf(stderr, "write(%#x, %u)\n", buf, len);
@@ -101,6 +105,19 @@ static long openat2(int dirfd, const char *path, struct open_how *how,
 static int32_t sys_open(uint32_t pathname, int flags) {
 	(void) flags;
 
+	int ret = -KEINVAL;
+	int *fd_orig = NULL;
+	for (size_t i = 0; i < ARRSZE(k_state.fds); i++) {
+		if (k_state.fds[i] == -1) {
+			fd_orig = &k_state.fds[i];
+			break;
+		}
+	}
+	if (!fd_orig) {
+		ret = -KENOMEM;
+		goto exit;
+	}
+
 	char* pathname_ptr = get_user(pathname);
 	if (!pathname_ptr)
 		goto exit;
@@ -110,7 +127,7 @@ static int32_t sys_open(uint32_t pathname, int flags) {
 		.mode = O_RDONLY,
 	};
 
-	int ret = errno2k(openat2(config.root, pathname_ptr, &how, sizeof(how)));
+	ret = errno2k(openat2(config.root, pathname_ptr, &how, sizeof(how)));
 	if (ret < 0)
 		goto exit;
 
@@ -124,14 +141,22 @@ exit:
 	if (config.strace)
 		fprintf(stderr, "open(%s) = %d\n", pathname_ptr, ret);
 
-	return ret;
+	if (ret < 0)
+		return ret;
+
+	*fd_orig = ret;
+	return fd_orig - k_state.fds;
 }
 
-static int32_t sys_close(int fd) {
+static int32_t sys_close(uint32_t fd) {
 	if (config.strace)
-		fprintf(stderr, "close(%d)\n", fd);
+		fprintf(stderr, "close(%u)\n", fd);
 
-	return errno2k(close(fd));
+	int32_t ret = ON_FD(close, fd);
+	if (ret >= 0)
+		k_state.fds[fd] = -1;
+
+	return ret;
 }
 
 static int32_t sys_swap_frontbuffer(uint32_t buffer) {
@@ -147,15 +172,15 @@ static int32_t sys_swap_frontbuffer(uint32_t buffer) {
 	return 0;
 }
 
-static int32_t sys_read(int fd, uint32_t buf, uint32_t count) {
-	if (config.strace)
-		fprintf(stderr, "read(%d, %#x, %u)\n", fd, buf, count);
+static int32_t sys_read(uint32_t fd, uint32_t buf, uint32_t count) {
+	if (config.strace && 0)
+		fprintf(stderr, "read(%u, %#x, %u)\n", fd, buf, count);
 
 	void* buf_ptr = get_user(buf);
 	if (!buf_ptr)
 		return -KEINVAL;
 
-	return errno2k(read(fd, buf_ptr, count));
+	return ON_FD(read, fd, buf_ptr, count);
 }
 
 static uint32_t sys_sbrk(int32_t inc) {
@@ -180,9 +205,9 @@ static uint32_t sys_gettick(void) {
 	return ticks;
 }
 
-static int32_t sys_seek(int fd, int32_t off, int whence) {
+static int32_t sys_seek(uint32_t fd, int32_t off, int whence) {
 	if (config.strace)
-		fprintf(stderr, "seek(%d, %d, %d)\n", fd, off, whence);
+		fprintf(stderr, "seek(%u, %d, %d)\n", fd, off, whence);
 
 	switch (whence) {
 	case KSEEK_SET:
@@ -198,7 +223,7 @@ static int32_t sys_seek(int fd, int32_t off, int whence) {
 		return -KEINVAL;
 	};
 
-	return errno2k(lseek(fd, off, whence));
+	return ON_FD(lseek, fd, off, whence);
 }
 
 static int32_t sys_getkey(void) {
