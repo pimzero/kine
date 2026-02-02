@@ -220,13 +220,6 @@ static void sigsys_handler(siginfo_t* siginfo, struct ucontext_t* ctx) {
 #undef REG
 }
 
-static void readat(int fd, size_t off, void* buf, size_t count) {
-	if (lseek(fd, off, SEEK_SET) < 0)
-		err(1, "lseek");
-	if (read(fd, buf, count) < (int)count)
-		err(1, "read");
-}
-
 static entry_t load_elf(const char* fname) {
 	int fd = open(fname, O_RDONLY);
 	if (fd < 0)
@@ -261,14 +254,16 @@ static entry_t load_elf(const char* fname) {
 
 	for (size_t i = 0; i < ehdr.e_phnum; i++) {
 		Elf32_Phdr phdr;
-		readat(fd, ehdr.e_phoff + i * sizeof(phdr), &phdr,
-		       sizeof(phdr));
+		if (pread(fd, &phdr, sizeof(phdr),
+			  ehdr.e_phoff + i * sizeof(phdr)) != sizeof(phdr))
+			err(1, "pread(phdr)");
 
 		if (phdr.p_type != PT_LOAD)
 			continue;
 
-		readat(fd, phdr.p_offset, (char*)map + phdr.p_vaddr,
-		       phdr.p_filesz);
+		if (pread(fd, map + phdr.p_vaddr, phdr.p_filesz,
+			  phdr.p_offset) != phdr.p_filesz)
+			err(1, "pread(map)");
 	}
 
 	k_state.brk = config.brk;
