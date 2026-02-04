@@ -408,7 +408,7 @@ const char* list_renderers(void) {
 	return list;
 }
 
-static render_thread get_renderer(const char* name) {
+static renderer_t get_renderer(const char* name) {
 	for (const struct k_renderer* r = &__start_renderers;
 	     r < &__stop_renderers; r++)
 		if (!strcmp(r->name, name))
@@ -438,10 +438,25 @@ static void help(const char* argv0) {
 	__start_renderers.name);
 }
 
+static void* render_thread(void *data) {
+	renderer_t renderer = data;
+
+	sigset_t sigset;
+	if (sigemptyset(&sigset) < 0)
+		err(1, "sigemptyset");
+	if (sigaddset(&sigset, SIGSYS) < 0)
+		err(1, "sigaddset");
+	int r = pthread_sigmask(SIG_BLOCK, &sigset, NULL);
+	if (r != 0)
+		errx(1, "pthread_sigmask: %s", strerror(r));
+
+	return renderer(&k_state);
+}
+
 int main(int argc, char** argv) {
 	int opt;
 
-	void* (*render_thread)(struct k_state_t*) = __start_renderers.render_thread;
+	renderer_t renderer = __start_renderers.render_thread;
 
 	while ((opt = getopt(argc, argv, "p:sS:H:b:hl:Tr:")) != -1) {
 		switch (opt) {
@@ -467,8 +482,8 @@ int main(int argc, char** argv) {
 			config.k_on_main_thread = 1;
 			break;
 		case 'r':
-			render_thread = get_renderer(optarg);
-			if (render_thread)
+			renderer = get_renderer(optarg);
+			if (renderer)
 				break;
 			warnx("Invalid renderer \"%s\"", optarg);
 			help(argv[0]);
@@ -491,7 +506,7 @@ int main(int argc, char** argv) {
 
 	pthread_t tid;
 	if (config.k_on_main_thread) {
-		if (pthread_create(&tid, NULL, (void* (*)(void*))render_thread, &k_state) < 0)
+		if (pthread_create(&tid, NULL, render_thread, renderer) < 0)
 			err(1, "pthread_create");
 
 		k_thread(argv[optind]);
@@ -499,6 +514,6 @@ int main(int argc, char** argv) {
 		if (pthread_create(&tid, NULL, k_thread, argv[optind]) < 0)
 			err(1, "pthread_create");
 
-		render_thread(&k_state);
+		render_thread(renderer);
 	}
 }

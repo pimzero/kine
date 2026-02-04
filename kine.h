@@ -83,11 +83,11 @@ static inline int ring_pop(struct ring* rb, uint8_t* c) {
 
 uint32_t getms(void);
 
-typedef void* (*render_thread)(struct k_state_t*);
+typedef void* (*renderer_t)(struct k_state_t*);
 
 struct k_renderer {
 	const char* name;
-	const render_thread render_thread;
+	const renderer_t render_thread;
 };
 
 #define DEFINE_RENDERER(Name, Func) \
