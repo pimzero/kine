@@ -81,6 +81,7 @@ static inline int ring_pop(struct ring* rb, uint8_t* c) {
 	return 0;
 }
 
+int32_t syscall_dispatch(uint32_t sysnr, uint32_t* args);
 uint32_t getms(void);
 
 typedef void* (*renderer_t)(struct k_state_t*);

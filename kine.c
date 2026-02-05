@@ -49,6 +49,9 @@
 #ifndef HWCAP2_FSGSBASE
 #define HWCAP2_FSGSBASE        (1 << 1)
 #endif
+#ifndef SYS_USER_DISPATCH
+#define SYS_USER_DISPATCH 2
+#endif
 
 #define PROT_RWX (PROT_READ|PROT_WRITE|PROT_EXEC)
 
@@ -67,7 +70,6 @@
 	((SEGMENT_##Segment << 3) | SEGMENT_##Table | SEGMENT_RPL##Rpl)
 
 typedef void (*entry_t)(void);
-int32_t syscall_dispatch(uint32_t sysnr, uint32_t* args);
 
 static struct render_state render_state_default;
 
@@ -156,7 +158,7 @@ __asm__(						\
 ".pushsection .text\n"					\
 #Name ":\n\t"						\
 "push " R(bp) "\n\t"					\
-"mov " R(sp) ", " R(bp) "\n\t"			\
+"mov " R(sp) ", " R(bp) "\n\t"				\
 							\
 Prepare							\
 							\
@@ -208,6 +210,9 @@ MAKE_SIGSYS_HANDLER_ASM(sigsys_handler_asm,
 
 __attribute__ ((used))
 static void sigsys_handler(siginfo_t* siginfo, struct ucontext_t* ctx) {
+	if (siginfo->si_code != SYS_USER_DISPATCH)
+		return;
+
 #ifdef __x86_64__
 #define REG(X) REG_R##X
 #else
