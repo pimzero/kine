@@ -18,6 +18,7 @@
 #include <asm/prctl.h>
 #include <elf.h>
 #include <err.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <signal.h>
@@ -94,13 +95,22 @@ struct config_t config = {
 	.brk = USER_ESP,
 };
 
+
+static int seterrno(int val) {
+	if (val == 0)
+		return 0;
+
+	errno = val;
+	return -1;
+}
+
 void k_lock(struct k_state_t* k) {
-	if (pthread_mutex_lock(&k->lock))
+	if (seterrno(pthread_mutex_lock(&k->lock)))
 		err(1, "pthread_mutex_lock");
 }
 
 void k_unlock(struct k_state_t* k) {
-	if (pthread_mutex_unlock(&k->lock))
+	if (seterrno(pthread_mutex_unlock(&k->lock)))
 		err(1, "pthread_mutex_unlock");
 }
 
@@ -451,9 +461,8 @@ static void* render_thread(void *data) {
 		err(1, "sigemptyset");
 	if (sigaddset(&sigset, SIGSYS) < 0)
 		err(1, "sigaddset");
-	int r = pthread_sigmask(SIG_BLOCK, &sigset, NULL);
-	if (r != 0)
-		errx(1, "pthread_sigmask: %s", strerror(r));
+	if (seterrno(pthread_sigmask(SIG_BLOCK, &sigset, NULL)))
+		err(1, "pthread_sigmask");
 
 	return renderer(&k_state);
 }
@@ -511,12 +520,12 @@ int main(int argc, char** argv) {
 
 	pthread_t tid;
 	if (config.k_on_main_thread) {
-		if (pthread_create(&tid, NULL, render_thread, renderer) < 0)
+		if (seterrno(pthread_create(&tid, NULL, render_thread, renderer)) < 0)
 			err(1, "pthread_create");
 
 		k_thread(argv[optind]);
 	} else {
-		if (pthread_create(&tid, NULL, k_thread, argv[optind]) < 0)
+		if (seterrno(pthread_create(&tid, NULL, k_thread, argv[optind])) < 0)
 			err(1, "pthread_create");
 
 		render_thread(renderer);
