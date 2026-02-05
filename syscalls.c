@@ -29,9 +29,6 @@
 
 #include "kstd.h"
 
-extern struct config_t config;
-extern struct k_state_t k_state;
-
 typedef int32_t (*syscall_t)();
 
 static void* get_user(uint32_t ptr) {

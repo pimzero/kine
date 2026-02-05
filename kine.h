@@ -63,6 +63,9 @@ struct config_t {
 void k_lock(struct k_state_t*);
 void k_unlock(struct k_state_t*);
 
+extern struct config_t config;
+extern struct k_state_t k_state;
+
 static inline int ring_push(struct ring* rb, uint8_t c) {
 	if ((rb->z + 1) % ARRSZE(rb->buf) == rb->a)
 		return -1;
