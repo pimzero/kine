@@ -95,7 +95,6 @@ struct config_t config = {
 	.brk = USER_ESP,
 };
 
-
 static int seterrno(int val) {
 	if (val == 0)
 		return 0;
@@ -349,8 +348,8 @@ static void k_start(entry_t entry) {
 
 static void k_setup_sighandler(void) {
 	stack_t ss = {
-		.ss_sp = malloc(SIGSTKSZ * 16),
-		.ss_size = SIGSTKSZ * 16,
+		.ss_sp = malloc(SIGSTKSZ),
+		.ss_size = SIGSTKSZ,
 		.ss_flags = 0
 	};
 	if (!ss.ss_sp)
