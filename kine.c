@@ -175,47 +175,35 @@ static int supports_fsgsbase(void) {
 #define R(R) "%e"#R
 #endif
 
-#define MAKE_SIGSYS_HANDLER_ASM(Name, Prepare)		\
-void Name(int sig, siginfo_t *info, void *ucontext);	\
-void Name##_coredump(int sig, siginfo_t *info, void *ucontext);	\
+#define MAKE_SIGNAL_HANDLERS_ASM(Name, Prepare)		\
+void sigsys_##Name(int sig, siginfo_t *info, void *ucontext);	\
+void coredump_##Name(int sig, siginfo_t *info, void *ucontext);	\
 							\
 __asm__(						\
 ".pushsection .text\n"					\
-#Name ":\n\t"						\
+"sigsys_" #Name ":\n\t"					\
 "push " R(bp) "\n\t"					\
 "mov " R(sp) ", " R(bp) "\n\t"				\
-							\
 Prepare							\
-							\
 "call sigsys_handler\n\t"				\
-							\
-"mov $" XSTR(SEG_REG(DATA, LDT, 3)) ", %bx\n\t"		\
-"mov %bx, %fs\n\t"					\
-"mov %bx, %gs\n\t"					\
-							\
 "leave\n\t"						\
 "ret\n"							\
+".size sigsys_" #Name ", .-sigsys_" #Name "\n"		\
 "\n"							\
-#Name "_coredump:\n\t"					\
+"coredump_" #Name ":\n\t"				\
 "push " R(bp) "\n\t"					\
 "mov " R(sp) ", " R(bp) "\n\t"				\
-							\
 Prepare							\
-							\
-"call sighandler_coredump\n\t"				\
-							\
-"mov $" XSTR(SEG_REG(DATA, LDT, 3)) ", %bx\n\t"		\
-"mov %bx, %fs\n\t"					\
-"mov %bx, %gs\n\t"					\
-							\
+"call coredump_handler\n\t"				\
 "leave\n\t"						\
 "ret\n"							\
+".size coredump_" #Name ", .-coredump_" #Name "\n"	\
 ".popsection\n"						\
 )
 
 #ifdef __x86_64__
 
-MAKE_SIGSYS_HANDLER_ASM(sigsys_handler_asm,
+MAKE_SIGNAL_HANDLERS_ASM(handler_asm,
 "push %rdi\n\t"
 "push %rsi\n\t"
 "push %rdx\n\t"
@@ -229,15 +217,17 @@ MAKE_SIGSYS_HANDLER_ASM(sigsys_handler_asm,
 "pop %rdi\n\t" /* siginfo */
 "add $8, %rsp\n\t");
 
-MAKE_SIGSYS_HANDLER_ASM(sigsys_handler_asm_fsgsbase,
+MAKE_SIGNAL_HANDLERS_ASM(handler_asm_fsgsbase,
 "mov k_thread_fs(%rip), %rdi\n\t"
 "wrfsbase %rdi\n\t"
 "mov %rsi, %rdi\n\t"
 "mov %rdx, %rsi\n\t");
 
+#define GET_SIGACTION(Kind) (supports_fsgsbase() ? Kind##_handler_asm_fsgsbase : Kind##_handler_asm)
+
 #else
 
-MAKE_SIGSYS_HANDLER_ASM(sigsys_handler_asm,
+MAKE_SIGNAL_HANDLERS_ASM(handler_asm,
 "mov $0, %bx\n\t"
 "mov %bx, %fs\n\t"
 "mov $" XSTR(SEG_REG(LINUX_GS, GDT, 3)) ", %bx\n\t"
@@ -245,6 +235,8 @@ MAKE_SIGSYS_HANDLER_ASM(sigsys_handler_asm,
 
 "push 16(%ebp)\n\t" /* ctx */
 "push 12(%ebp)\n\t" /* siginfo */);
+
+#define GET_SIGACTION(Kind) Kind##_handler_asm
 
 #endif
 
@@ -389,13 +381,9 @@ static void k_setup_sighandler(void) {
 		err(1, "sigaltstack");
 
 	struct sigaction sa = {
-		.sa_sigaction = sigsys_handler_asm,
+		.sa_sigaction = GET_SIGACTION(sigsys),
 		.sa_flags = SA_SIGINFO|SA_ONSTACK,
 	};
-#if __x86_64__
-	if (supports_fsgsbase())
-		sa.sa_sigaction = sigsys_handler_asm_fsgsbase;
-#endif
 	if (sigaction(SIGSYS, &sa, NULL) < 0)
 		err(1, "sigaction");
 }
@@ -443,7 +431,7 @@ static uint16_t get_cs(const ucontext_t* ctx) {
 }
 
 __attribute__ ((used))
-static void sighandler_coredump(siginfo_t *si, void *ucontext) {
+static void coredump_handler(siginfo_t *si, void *ucontext) {
 	ucontext_t *ctx = ucontext;
 
 	if (get_cs(ctx) != SEG_REG(CODE, LDT, 3)) {
@@ -565,7 +553,7 @@ static void setup_sighandlers(void) {
 	};
 
 	struct sigaction sa = {
-		.sa_sigaction = sigsys_handler_asm_coredump,
+		.sa_sigaction = GET_SIGACTION(sigsys),
 		.sa_flags = SA_SIGINFO|SA_ONSTACK,
 	};
 	for (size_t i = 0; i < ARRSZE(signals); i++)
