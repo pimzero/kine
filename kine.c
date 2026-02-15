@@ -654,6 +654,9 @@ int main(int argc, char** argv) {
 		case 'b': /* base address */
 			config.base = parse_ptr(optarg);
 			break;
+		case 'l': /* limit */
+			config.limit = parse_ptr(optarg);
+			break;
 		case 's':
 			config.strace = 1;
 			break;
