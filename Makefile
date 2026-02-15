@@ -24,10 +24,14 @@ all: $(BIN)
 
 $(BIN): $(OBJS)
 
-$(OBJS): kstd.h
+$(OBJS): i386_gen.h kstd.h
 
 # Files to generate from github.com/lse/k
-GEN=kstd.h vgapalette.c
+GEN= \
+     i386_gen.h \
+     kstd.h \
+     vgapalette.c \
+
 kstd.h: ./third_party/k/k/include/k/kstd.h
 	sed -E -e 's/^#define\s+([^\s]+\s)/#define K\1/' \
 	       -e 's/\<off_t\>/koff_t/g' \
@@ -36,6 +40,13 @@ kstd.h: ./third_party/k/k/include/k/kstd.h
 
 vgapalette.c: ./third_party/k/k/libvga.c
 	sed -nE -e 's/^static/const/g' -e '/libvga_default_palette\[/,/}/ { p }' $< >$@
+
+gen_i386_hdr: CFLAGS:=-std=c99 -Wall -Wextra -m32
+gen_i386_hdr: CPPFLAGS:=
+gen_i386_hdr: LDLIBS:=
+
+i386_gen.h: gen_i386_hdr
+	./$^ > $@
 
 clean:
 	$(RM) $(BIN) $(OBJS) $(DEPS) $(GEN)

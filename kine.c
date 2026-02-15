@@ -30,6 +30,7 @@
 #include <sys/auxv.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
+#include <sys/procfs.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -38,8 +39,20 @@
 #include "kine.h"
 #include "kstd.h"
 
+#if __x86_64__
+#include "i386_gen.h"
+#define elf_prstatus elf_prstatus_i386
+#define user_regs_struct user_regs_struct_i386
+#endif
+
 #define XSTR(S) STR(S)
 #define STR(S) #S
+
+#define ALIGN_UP(X, N) (((X) + (N - 1)) & ~(N - 1))
+
+#ifndef typeof
+#define typeof(Value) __typeof__(Value)
+#endif
 
 #ifndef PR_SET_SYSCALL_USER_DISPATCH
 #define PR_SET_SYSCALL_USER_DISPATCH 59
@@ -55,6 +68,8 @@
 #endif
 
 #define PROT_RWX (PROT_READ|PROT_WRITE|PROT_EXEC)
+
+#define ELF_NOTE_CORE "CORE"
 
 #define USER_ESP 0x90000
 #define BASE 65536
@@ -162,6 +177,7 @@ static int supports_fsgsbase(void) {
 
 #define MAKE_SIGSYS_HANDLER_ASM(Name, Prepare)		\
 void Name(int sig, siginfo_t *info, void *ucontext);	\
+void Name##_coredump(int sig, siginfo_t *info, void *ucontext);	\
 							\
 __asm__(						\
 ".pushsection .text\n"					\
@@ -172,6 +188,21 @@ __asm__(						\
 Prepare							\
 							\
 "call sigsys_handler\n\t"				\
+							\
+"mov $" XSTR(SEG_REG(DATA, LDT, 3)) ", %bx\n\t"		\
+"mov %bx, %fs\n\t"					\
+"mov %bx, %gs\n\t"					\
+							\
+"leave\n\t"						\
+"ret\n"							\
+"\n"							\
+#Name "_coredump:\n\t"					\
+"push " R(bp) "\n\t"					\
+"mov " R(sp) ", " R(bp) "\n\t"				\
+							\
+Prepare							\
+							\
+"call sighandler_coredump\n\t"				\
 							\
 "mov $" XSTR(SEG_REG(DATA, LDT, 3)) ", %bx\n\t"		\
 "mov %bx, %fs\n\t"					\
@@ -236,7 +267,6 @@ static void sigsys_handler(siginfo_t* siginfo, struct ucontext_t* ctx) {
 
 	ctx->uc_mcontext.gregs[REG(AX)] =
 		syscall_dispatch(siginfo->si_syscall, args);
-#undef REG
 }
 
 static entry_t load_elf(const char* fname) {
@@ -281,7 +311,7 @@ static entry_t load_elf(const char* fname) {
 			continue;
 
 		if (pread(fd, map + phdr.p_vaddr, phdr.p_filesz,
-			  phdr.p_offset) != phdr.p_filesz)
+			  phdr.p_offset) != (ssize_t)phdr.p_filesz)
 			err(1, "pread(map)");
 	}
 
@@ -396,6 +426,153 @@ static void* k_thread(void* fname) {
 	return NULL;
 }
 
+static const char* coredump_name(void) {
+	static char out[128];
+
+	snprintf(out, sizeof(out), "kine.%d.dump", getpid());
+
+	return out;
+}
+
+static uint16_t get_cs(const ucontext_t* ctx) {
+#if __x86_64__
+	return ctx->uc_mcontext.gregs[REG_CSGSFS] & 0xffff;
+#else
+	return ctx->uc_mcontext.gregs[REG_CS];
+#endif
+}
+
+__attribute__ ((used))
+static void sighandler_coredump(siginfo_t *si, void *ucontext) {
+	ucontext_t *ctx = ucontext;
+
+	if (get_cs(ctx) != SEG_REG(CODE, LDT, 3)) {
+		struct sigaction sa = {
+			.sa_handler = SIG_DFL,
+		};
+		if (sigaction(si->si_signo, &sa, NULL) < 0)
+			err(1, "sigaction(SIG_DFL)");
+
+		return;
+	}
+
+	int fd = open(coredump_name(), O_CREAT|O_WRONLY, 0644);
+	if (fd < 0)
+		err(1, "open");
+
+	enum {
+		PHDR_NOTE,
+		PHDR_LOAD,
+		PHDR_END,
+	};
+
+	struct {
+		Elf32_Ehdr ehdr;
+		Elf32_Phdr phdrs[PHDR_END];
+		struct {
+			struct {
+				Elf32_Nhdr hdr;
+				char name[ALIGN_UP(sizeof(ELF_NOTE_CORE), 4)];
+				struct elf_prstatus desc;
+			} prstatus;
+		} notes __attribute__((aligned(4)));
+	} coredump = {
+		.ehdr = {
+			.e_ident = {
+				[EI_MAG0] = ELFMAG0,
+				[EI_MAG1] = ELFMAG1,
+				[EI_MAG2] = ELFMAG2,
+				[EI_MAG3] = ELFMAG3,
+				[EI_CLASS] = ELFCLASS32,
+				[EI_DATA] = ELFDATA2LSB,
+				[EI_VERSION] = EV_CURRENT,
+				[EI_OSABI] = ELFOSABI_SYSV,
+			},
+			.e_type = ET_CORE,
+			.e_machine = EM_386,
+			.e_version = EV_CURRENT,
+			.e_phoff = offsetof(typeof(coredump), phdrs),
+			.e_ehsize = sizeof(coredump.ehdr),
+			.e_phentsize = sizeof(coredump.phdrs[0]),
+			.e_phnum = ARRSZE(coredump.phdrs),
+		},
+		.phdrs = {
+			[PHDR_NOTE] = {
+				.p_type = PT_NOTE,
+				.p_offset = offsetof(typeof(coredump), notes),
+				.p_filesz = sizeof(coredump.notes),
+				.p_align = 4,
+			},
+			[PHDR_LOAD] = {
+				.p_type = PT_LOAD,
+				.p_offset = ALIGN_UP(sizeof(coredump), 4096),
+				.p_filesz = config.limit * 4096,
+				.p_memsz = config.limit * 4096,
+				.p_flags = PF_R|PF_W|PF_X,
+				.p_align = 4096,
+			},
+		},
+		.notes = {
+			.prstatus = {
+				.hdr = {
+					.n_namesz = sizeof(coredump.notes.prstatus.name),
+					.n_descsz = ALIGN_UP(sizeof(coredump.notes.prstatus.desc), 4),
+					.n_type = NT_PRSTATUS,
+				},
+				.name = ELF_NOTE_CORE,
+			},
+		},
+	};
+
+	struct user_regs_struct regs = {
+		.ebx = ctx->uc_mcontext.gregs[REG(BX)],
+		.ecx = ctx->uc_mcontext.gregs[REG(CX)],
+		.edx = ctx->uc_mcontext.gregs[REG(DX)],
+		.esi = ctx->uc_mcontext.gregs[REG(SI)],
+		.edi = ctx->uc_mcontext.gregs[REG(DI)],
+		.ebp = ctx->uc_mcontext.gregs[REG(BP)],
+		.eax = ctx->uc_mcontext.gregs[REG(AX)],
+		.eip = ctx->uc_mcontext.gregs[REG(IP)],
+		.esp = ctx->uc_mcontext.gregs[REG(SP)],
+		.eflags = ctx->uc_mcontext.gregs[REG_EFL],
+		.orig_eax = ctx->uc_mcontext.gregs[REG(AX)],
+	};
+	memcpy(&coredump.notes.prstatus.desc.pr_reg, &regs, sizeof(regs));
+
+	if (write(fd, &coredump, sizeof(coredump)) != sizeof(coredump))
+		err(1, "write");
+
+	if (lseek(fd, coredump.phdrs[PHDR_LOAD].p_offset, SEEK_SET) < 0)
+		err(1, "lseek");
+
+	if (write(fd, (void*)config.base, config.limit * 4096) < 0)
+		err(1, "write");
+
+	close(fd);
+
+	const char core_dumped_log[] = "Core dumped.\n";
+	write(2, core_dumped_log, sizeof(core_dumped_log) - 1);
+	_Exit(1);
+}
+
+static void setup_sighandlers(void) {
+	const int signals[] = {
+		SIGBUS,
+		SIGFPE,
+		SIGILL,
+		SIGSEGV,
+		SIGTRAP,
+	};
+
+	struct sigaction sa = {
+		.sa_sigaction = sigsys_handler_asm_coredump,
+		.sa_flags = SA_SIGINFO|SA_ONSTACK,
+	};
+	for (size_t i = 0; i < ARRSZE(signals); i++)
+		if (sigaction(signals[i], &sa, NULL) < 0)
+			err(1, "sigaction");
+}
+
 extern const struct k_renderer __start_renderers, __stop_renderers;
 
 const char* list_renderers(void) {
@@ -440,13 +617,14 @@ static void help(const char* argv0) {
 	"Usage: %s [arguments] /path/to/rom\n"
 	"\n"
 	"Arguments:\n"
-	"  -h     \tShow this message\n"
+	"  -h         \tShow this message\n"
 	"  -s         \tTrace syscalls\n"
 	"  -S addr    \tStart value of stack pointer (default: %#x)\n"
 	"  -H addr    \tStart value of heap pointer (default: %#x)\n"
 	"  -b addr    \tAddress to load the rom (default: %#x)\n"
 	"  -l num     \tSize (limit) of the rom's segment (in pages) (default: %#x)\n"
 	"  -T         \tRuns k on the main thread\n"
+	"  -C         \tSave rom coredump\n"
 	"  -r renderer\tSelects the renderer (one of: [%s], default: %s)\n",
 	argv0, USER_ESP, USER_ESP, BASE, LIMIT, list_renderers(),
 	__start_renderers.name);
@@ -471,7 +649,7 @@ int main(int argc, char** argv) {
 
 	renderer_t renderer = __start_renderers.render_thread;
 
-	while ((opt = getopt(argc, argv, "p:sS:H:b:hl:Tr:")) != -1) {
+	while ((opt = getopt(argc, argv, "p:sS:H:b:hl:Tr:C")) != -1) {
 		switch (opt) {
 		case 'p':
 			if (config.root != -1)
@@ -501,6 +679,9 @@ int main(int argc, char** argv) {
 			warnx("Invalid renderer \"%s\"", optarg);
 			help(argv[0]);
 			exit(1);
+		case 'C':
+			setup_sighandlers();
+			break;
 		default:
 			fprintf(stderr, "\n");
 			/* fallthrough */
