@@ -105,7 +105,7 @@ static void init_k_state_t(struct k_state_t *state) {
 struct config_t config = {
 	.root = -1,
 	.base = BASE,
-	.limit = LIMIT,
+	.limit_as_pages = LIMIT,
 	.sp = USER_ESP,
 	.brk = USER_ESP,
 };
@@ -288,7 +288,7 @@ static entry_t load_elf(const char* fname) {
 	if (memcmp(&ehdr, &sig, offsetof(Elf32_Ehdr, e_entry)))
 		errx(1, "invalid file \"%s\"", fname);
 
-	void* map = mmap((void*)config.base, config.limit * 4096, PROT_RWX,
+	void* map = mmap((void*)config.base, config.limit, PROT_RWX,
 			 MAP_PRIVATE|MAP_FIXED_NOREPLACE|MAP_ANON, -1, 0);
 	if (map == MAP_FAILED)
 		err(1, "mmap");
@@ -309,7 +309,7 @@ static entry_t load_elf(const char* fname) {
 
 	k_state.brk = config.brk;
 
-	if (set_syscall_user_dispatch((char*)config.base + config.limit * 4096,
+	if (set_syscall_user_dispatch((char*)config.base + config.limit,
 				      (void*)~(0x1ULL<<63)) < 0)
 		err(1, "set_syscall_user_dispatch");
 
@@ -323,7 +323,7 @@ static void set_ldt_entry(unsigned nr, unsigned content,
 	struct user_desc ldt_entry = {
 		.entry_number = nr,
 		.base_addr = config.base,
-		.limit = config.limit,
+		.limit = config.limit_as_pages,
 		.limit_in_pages = 1,
 		.seg_32bit = 1,
 		.contents = content,
@@ -493,11 +493,11 @@ static void coredump_handler(siginfo_t *si, void *ucontext) {
 			},
 			[PHDR_LOAD] = {
 				.p_type = PT_LOAD,
-				.p_offset = ALIGN_UP(sizeof(coredump), 4096),
-				.p_filesz = config.limit * 4096,
-				.p_memsz = config.limit * 4096,
+				.p_offset = ALIGN_UP(sizeof(coredump), PAGE_SIZE),
+				.p_filesz = config.limit,
+				.p_memsz = config.limit,
 				.p_flags = PF_R|PF_W|PF_X,
-				.p_align = 4096,
+				.p_align = PAGE_SIZE,
 			},
 		},
 		.notes = {
@@ -533,7 +533,7 @@ static void coredump_handler(siginfo_t *si, void *ucontext) {
 	if (lseek(fd, coredump.phdrs[PHDR_LOAD].p_offset, SEEK_SET) < 0)
 		err(1, "lseek");
 
-	if (write(fd, (void*)config.base, config.limit * 4096) < 0)
+	if (write(fd, (void*)config.base, config.limit) < 0)
 		err(1, "write");
 
 	close(fd);
@@ -655,7 +655,7 @@ int main(int argc, char** argv) {
 			config.base = parse_ptr(optarg);
 			break;
 		case 'l': /* limit */
-			config.limit = parse_ptr(optarg);
+			config.limit_as_pages = parse_ptr(optarg);
 			break;
 		case 's':
 			config.strace = 1;

@@ -32,7 +32,7 @@
 typedef int32_t (*syscall_t)();
 
 static void* get_user(uint32_t ptr) {
-	if (ptr >= config.limit * 4096)
+	if (ptr >= config.limit)
 		return NULL;
 	return (void*)(ptr + config.base);
 }

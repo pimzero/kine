@@ -57,7 +57,14 @@ struct config_t {
 	int root;
 	int strace, k_on_main_thread;
 
-	uintptr_t base, limit, sp, brk;
+	uintptr_t base, sp, brk;
+	union {
+		uint32_t limit;
+		struct {
+			uint32_t __zeros:12;
+			uint32_t limit_as_pages:20;
+		};
+	};
 };
 
 void k_lock(struct k_state_t*);
