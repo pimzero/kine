@@ -430,6 +430,14 @@ static uint16_t get_cs(const ucontext_t* ctx) {
 #endif
 }
 
+static void *memrchr_inv(const void *s, int c, size_t n) {
+	const char *ptr = s;
+	while (n && ptr[n - 1] == c)
+		--n;
+
+	return (void *)&ptr[n];
+}
+
 __attribute__ ((used))
 static void coredump_handler(siginfo_t *si, void *ucontext) {
 	ucontext_t *ctx = ucontext;
@@ -443,6 +451,9 @@ static void coredump_handler(siginfo_t *si, void *ucontext) {
 
 		return;
 	}
+
+	const char* last_set_byte = memrchr_inv((void*)config.base, 0, config.limit);
+	size_t filesz = last_set_byte - (const char*)config.base;
 
 	int fd = open(coredump_name(), O_CREAT|O_WRONLY, 0644);
 	if (fd < 0)
@@ -494,7 +505,7 @@ static void coredump_handler(siginfo_t *si, void *ucontext) {
 			[PHDR_LOAD] = {
 				.p_type = PT_LOAD,
 				.p_offset = ALIGN_UP(sizeof(coredump), PAGE_SIZE),
-				.p_filesz = config.limit,
+				.p_filesz = filesz,
 				.p_memsz = config.limit,
 				.p_flags = PF_R|PF_W|PF_X,
 				.p_align = PAGE_SIZE,
@@ -533,7 +544,7 @@ static void coredump_handler(siginfo_t *si, void *ucontext) {
 	if (lseek(fd, coredump.phdrs[PHDR_LOAD].p_offset, SEEK_SET) < 0)
 		err(1, "lseek");
 
-	if (write(fd, (void*)config.base, config.limit) < 0)
+	if (write(fd, (void*)config.base, filesz) < 0)
 		err(1, "write");
 
 	close(fd);
