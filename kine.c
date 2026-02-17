@@ -249,7 +249,7 @@ static void sigsys_handler(siginfo_t* siginfo, struct ucontext_t* ctx) {
 #else
 #define REG(X) REG_E##X
 #endif
-	uint32_t args[] = {
+	syscall_args_t args = {
 		ctx->uc_mcontext.gregs[REG(BX)],
 		ctx->uc_mcontext.gregs[REG(CX)],
 		ctx->uc_mcontext.gregs[REG(DX)],

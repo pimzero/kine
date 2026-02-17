@@ -238,7 +238,7 @@ unlock:
 static const struct {
 	syscall_t f;
 	const char *name;
-	const char *fmt[4];
+	const char *fmt[ARRSZE((syscall_args_t){})];
 } syscalls[] = {
 #define SYS(Name, ...) [KSYSCALL_##Name] = { .f = (syscall_t)sys_##Name, .name = #Name, .fmt = { __VA_ARGS__ }, }
 	SYS(WRITE, "%#x", "%u"),
@@ -258,7 +258,7 @@ static const struct {
 #undef SYS
 };
 
-int32_t syscall_dispatch(uint32_t nr, uint32_t* args) {
+int32_t syscall_dispatch(uint32_t nr, const syscall_args_t args) {
 	if (nr > ARRSZE(syscalls) || !syscalls[nr].f) {
 		fprintf(stderr, "unsupported syscall: %d\n", nr);
 		return -KENOSYS;
