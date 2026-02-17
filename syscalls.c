@@ -74,14 +74,12 @@ static int32_t sys_WRITE(uint32_t buf, uint32_t len) {
 }
 
 static int32_t sys_SETVIDEO(int type) {
+	K_LOCK_SCOPPED(lock, &k_state);
+
 	switch (type) {
 	case KVIDEO_TEXT:
 	case KVIDEO_GRAPHIC:
-		k_lock(&k_state);
-
 		k_state.video_mode = type;
-
-		k_unlock(&k_state);
 		return 0;
 	default:
 		return -KEINVAL;
@@ -188,49 +186,38 @@ static int32_t sys_SEEK(uint32_t fd, int32_t off, int whence) {
 }
 
 static int32_t sys_GETKEY(void) {
-	int32_t out = -1;
+	K_LOCK_SCOPPED(lock, &k_state);
 
-	k_lock(&k_state);
-
-	out = k_state.key;
-
-	k_unlock(&k_state);
-
-	return out;
+	return k_state.key;
 }
 
 static uint32_t sys_SETPALETTE(uint32_t palette, uint32_t sze) {
 	uint32_t* arr = get_user(palette);
-
 	if (!arr)
 		return -KEINVAL;
 
-	k_lock(&k_state);
+	K_LOCK_SCOPPED(lock, &k_state);
+
 	k_state.render_state->set_palette(k_state.render_state, arr, sze);
-	k_unlock(&k_state);
 
 	return 0;
 }
 
 static int32_t sys_READKEY(uint32_t uaddr) {
-	int32_t out = -KEAGAIN;
 	struct key_event *ev = get_user(uaddr);
 	if (!ev)
 		return -KEINVAL;
 
-	k_lock(&k_state);
+	K_LOCK_SCOPPED(lock, &k_state);
+
 	uint8_t c = 0;
 	if (ring_pop(&k_state.keys, &c) < 0)
-		goto unlock;
+		return -KEAGAIN;
 
 	ev->state = c & FLAG_KEY_RELEASED ? KEY_RELEASED : KEY_PRESSED;
 	ev->key = c & ~FLAG_KEY_RELEASED;
 
-	out = 0;
-unlock:
-	k_unlock(&k_state);
-
-	return out;
+	return 0;
 }
 
 #define FMT_STRING ((void *)1)

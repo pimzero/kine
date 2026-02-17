@@ -70,6 +70,14 @@ struct config_t {
 void k_lock(struct k_state_t*);
 void k_unlock(struct k_state_t*);
 
+static inline void k_unlock_ref(struct k_state_t** ptr) {
+	k_unlock(*ptr);
+}
+
+#define K_LOCK_SCOPPED(Lck, State) \
+	struct k_state_t *Lck __attribute__((cleanup(k_unlock_ref))) = \
+	({ struct k_state_t *val_ = (State); k_lock(val_); val_; })
+
 extern struct config_t config;
 extern struct k_state_t k_state;
 
