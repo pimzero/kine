@@ -232,7 +232,7 @@ static const struct {
 	SYS(SBRK, "%d"),
 	SYS(GETKEY),
 	SYS(GETTICK),
-	SYS(OPEN, "%#x"),
+	SYS(OPEN, FMT_STRING),
 	SYS(READ, "%d", "%#x", "%u"),
 	SYS(SEEK, "%u", "%d", "%d"),
 	SYS(CLOSE, "%d"),
@@ -244,6 +244,14 @@ static const struct {
 	SYS(READKEY, "%#x"),
 #undef SYS
 };
+
+static void print_string_arg(FILE *f, uint32_t arg) {
+	const char *s = get_user(arg);
+	if (s)
+		fprintf(f, "\"%s\"", s);
+	else
+		fprintf(f, "%#x", arg);
+}
 
 int32_t syscall_dispatch(uint32_t nr, const syscall_args_t args) {
 	if (nr > ARRSZE(syscalls) || !syscalls[nr].f) {
@@ -258,7 +266,10 @@ int32_t syscall_dispatch(uint32_t nr, const syscall_args_t args) {
 		for (size_t i = 0; i < ARRSZE(syscalls[nr].fmt) && syscalls[nr].fmt[i]; i++) {
 			if (i)
 				fprintf(stderr, ", ");
-			fprintf(stderr, syscalls[nr].fmt[i], args[i]);
+			if (syscalls[nr].fmt[i] == FMT_STRING)
+				print_string_arg(stderr, args[i]);
+			else
+				fprintf(stderr, syscalls[nr].fmt[i], args[i]);
 		}
 
 		fprintf(stderr, ") = %d\n", ret);
