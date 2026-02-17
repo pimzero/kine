@@ -365,7 +365,7 @@ static void k_start(entry_t entry) {
 	: [entry]"r"(entry), [sp]"r"((uint32_t)config.sp)
 	: "memory", "ebx");
 
-	_Exit(1);
+	__builtin_unreachable();
 }
 
 static void k_setup_sighandler(void) {
