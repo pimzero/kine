@@ -65,10 +65,7 @@ static int32_t errno2k(int32_t r)
 		errno2k((Fn)(k_state.fds[(Fd)] __VA_OPT__(,) __VA_ARGS__)); \
 	})
 
-static int32_t sys_write(uint32_t buf, uint32_t len) {
-	if (config.strace)
-		fprintf(stderr, "write(%#x, %u)\n", buf, len);
-
+static int32_t sys_WRITE(uint32_t buf, uint32_t len) {
 	void* buf_ptr = get_user(buf);
 	if (!buf_ptr)
 		return -KEINVAL;
@@ -76,10 +73,7 @@ static int32_t sys_write(uint32_t buf, uint32_t len) {
 	return errno2k(write(1, buf_ptr, len));
 }
 
-static int32_t sys_setvideo(int type) {
-	if (config.strace)
-		fprintf(stderr, "setvideo(%d)\n", type);
-
+static int32_t sys_SETVIDEO(int type) {
 	switch (type) {
 	case KVIDEO_TEXT:
 	case KVIDEO_GRAPHIC:
@@ -99,10 +93,9 @@ static long openat2(int dirfd, const char *path, struct open_how *how,
 	return syscall(SYS_openat2, dirfd, path, how, size);
 }
 
-static int32_t sys_open(uint32_t pathname, int flags) {
+static int32_t sys_OPEN(uint32_t pathname, int flags) {
 	(void) flags;
 
-	int ret = -KEINVAL;
 	int *fd_orig = NULL;
 	for (size_t i = 0; i < ARRSZE(k_state.fds); i++) {
 		if (k_state.fds[i] == -1) {
@@ -110,45 +103,33 @@ static int32_t sys_open(uint32_t pathname, int flags) {
 			break;
 		}
 	}
-	if (!fd_orig) {
-		ret = -KENOMEM;
-		goto exit;
-	}
+	if (!fd_orig)
+		return -KENOMEM;
 
 	char* pathname_ptr = get_user(pathname);
 	if (!pathname_ptr)
-		goto exit;
+		return -KEINVAL;
 
 	struct open_how how = {
 		.resolve = RESOLVE_IN_ROOT|RESOLVE_NO_MAGICLINKS,
 		.mode = O_RDONLY,
 	};
 
-	ret = errno2k(openat2(config.root, pathname_ptr, &how, sizeof(how)));
+	int ret = errno2k(openat2(config.root, pathname_ptr, &how, sizeof(how)));
 	if (ret < 0)
-		goto exit;
+		return ret;
 
 	struct stat st;
 	if ((fstat(ret, &st) < 0) || S_ISDIR(st.st_mode)) {
 		close(ret);
-		ret = -KENOENT;
+		return -KENOENT;
 	}
-
-exit:
-	if (config.strace)
-		fprintf(stderr, "open(%s) = %d\n", pathname_ptr, ret);
-
-	if (ret < 0)
-		return ret;
 
 	*fd_orig = ret;
 	return fd_orig - k_state.fds;
 }
 
-static int32_t sys_close(uint32_t fd) {
-	if (config.strace)
-		fprintf(stderr, "close(%u)\n", fd);
-
+static int32_t sys_CLOSE(uint32_t fd) {
 	int32_t ret = ON_FD(close, fd);
 	if (ret >= 0)
 		k_state.fds[fd] = -1;
@@ -156,10 +137,7 @@ static int32_t sys_close(uint32_t fd) {
 	return ret;
 }
 
-static int32_t sys_swap_frontbuffer(uint32_t buffer) {
-	if (config.strace)
-		fprintf(stderr, "swap_frontbuffer(%#x)\n", buffer);
-
+static int32_t sys_SWAP_FRONTBUFFER(uint32_t buffer) {
 	uint32_t *arr = get_user(buffer);
 	if (!arr)
 		return -KEINVAL;
@@ -169,10 +147,7 @@ static int32_t sys_swap_frontbuffer(uint32_t buffer) {
 	return 0;
 }
 
-static int32_t sys_read(uint32_t fd, uint32_t buf, uint32_t count) {
-	if (config.strace && 0)
-		fprintf(stderr, "read(%u, %#x, %u)\n", fd, buf, count);
-
+static int32_t sys_READ(uint32_t fd, uint32_t buf, uint32_t count) {
 	void* buf_ptr = get_user(buf);
 	if (!buf_ptr)
 		return -KEINVAL;
@@ -180,32 +155,21 @@ static int32_t sys_read(uint32_t fd, uint32_t buf, uint32_t count) {
 	return ON_FD(read, fd, buf_ptr, count);
 }
 
-static uint32_t sys_sbrk(int32_t inc) {
+static uint32_t sys_SBRK(int32_t inc) {
 	if (inc < 0)
 		inc = 0;
 
 	uint32_t out = k_state.brk;
 	k_state.brk += inc;
 
-	if (config.strace)
-		fprintf(stderr, "sbrk(%d) = %#x\n", inc, out);
-
 	return out;
 }
 
-static uint32_t sys_gettick(void) {
-	uint32_t ticks = getms() - k_state.starttime;
-
-	if (config.strace)
-		fprintf(stderr, "gettick() = %u\n", ticks);
-
-	return ticks;
+static uint32_t sys_GETTICK(void) {
+	return getms() - k_state.starttime;
 }
 
-static int32_t sys_seek(uint32_t fd, int32_t off, int whence) {
-	if (config.strace)
-		fprintf(stderr, "seek(%u, %d, %d)\n", fd, off, whence);
-
+static int32_t sys_SEEK(uint32_t fd, int32_t off, int whence) {
 	switch (whence) {
 	case KSEEK_SET:
 		whence = SEEK_SET;
@@ -223,7 +187,7 @@ static int32_t sys_seek(uint32_t fd, int32_t off, int whence) {
 	return ON_FD(lseek, fd, off, whence);
 }
 
-static int32_t sys_getkey(void) {
+static int32_t sys_GETKEY(void) {
 	int32_t out = -1;
 
 	k_lock(&k_state);
@@ -232,16 +196,11 @@ static int32_t sys_getkey(void) {
 
 	k_unlock(&k_state);
 
-	if (config.strace)
-		fprintf(stderr, "getkey() = %d\n", out);
-
 	return out;
 }
 
-static uint32_t sys_set_palette(uint32_t palette, uint32_t sze) {
+static uint32_t sys_SETPALETTE(uint32_t palette, uint32_t sze) {
 	uint32_t* arr = get_user(palette);
-	if (config.strace)
-		fprintf(stderr, "set_palette(%#x, %u)\n", palette, sze);
 
 	if (!arr)
 		return -KEINVAL;
@@ -253,10 +212,7 @@ static uint32_t sys_set_palette(uint32_t palette, uint32_t sze) {
 	return 0;
 }
 
-static int32_t sys_readkey(uint32_t uaddr) {
-	if (config.strace)
-		fprintf(stderr, "readkey(%#x)\n", uaddr);
-
+static int32_t sys_READKEY(uint32_t uaddr) {
 	int32_t out = -KEAGAIN;
 	struct key_event *ev = get_user(uaddr);
 	if (!ev)
@@ -277,30 +233,49 @@ unlock:
 	return out;
 }
 
-#define not_implemented NULL
+#define FMT_STRING ((void *)1)
 
-static const syscall_t syscalls[] = {
-	[KSYSCALL_WRITE] = (syscall_t)sys_write,
-	[KSYSCALL_SBRK] = (syscall_t)sys_sbrk,
-	[KSYSCALL_GETKEY] = (syscall_t)sys_getkey,
-	[KSYSCALL_GETTICK] = (syscall_t)sys_gettick,
-	[KSYSCALL_OPEN] = (syscall_t)sys_open,
-	[KSYSCALL_READ] = (syscall_t)sys_read,
-	[KSYSCALL_SEEK] = (syscall_t)sys_seek,
-	[KSYSCALL_CLOSE] = (syscall_t)sys_close,
-	[KSYSCALL_SETVIDEO] = (syscall_t)sys_setvideo,
-	[KSYSCALL_SWAP_FRONTBUFFER] = (syscall_t)sys_swap_frontbuffer,
-	[KSYSCALL_PLAYSOUND] = (syscall_t)not_implemented, /* not implemented */
-	[KSYSCALL_SETPALETTE] = (syscall_t)sys_set_palette,
-	[KSYSCALL_GETMOUSE] = (syscall_t)not_implemented, /* not implemented */
-	[KSYSCALL_READKEY] = (syscall_t)sys_readkey,
+static const struct {
+	syscall_t f;
+	const char *name;
+	const char *fmt[4];
+} syscalls[] = {
+#define SYS(Name, ...) [KSYSCALL_##Name] = { .f = (syscall_t)sys_##Name, .name = #Name, .fmt = { __VA_ARGS__ }, }
+	SYS(WRITE, "%#x", "%u"),
+	SYS(SBRK, "%d"),
+	SYS(GETKEY),
+	SYS(GETTICK),
+	SYS(OPEN, "%#x"),
+	SYS(READ, "%d", "%#x", "%u"),
+	SYS(SEEK, "%u", "%d", "%d"),
+	SYS(CLOSE, "%d"),
+	SYS(SETVIDEO, "%d"),
+	SYS(SWAP_FRONTBUFFER, "%#x"),
+	/* SYS(PLAYSOUND), // not implemented. */
+	SYS(SETPALETTE, "%#x", "%u"),
+	/* SYS(GETMOUSE), // not implemented. */
+	SYS(READKEY, "%#x"),
+#undef SYS
 };
 
-int32_t syscall_dispatch(uint32_t sysnr, uint32_t* args) {
-	if (sysnr > ARRSZE(syscalls) || !syscalls[sysnr]) {
-		fprintf(stderr, "unsupported syscall: %d\n", sysnr);
+int32_t syscall_dispatch(uint32_t nr, uint32_t* args) {
+	if (nr > ARRSZE(syscalls) || !syscalls[nr].f) {
+		fprintf(stderr, "unsupported syscall: %d\n", nr);
 		return -KENOSYS;
 	}
 
-	return syscalls[sysnr](args[0], args[1], args[2], args[3]);
+	int32_t ret = syscalls[nr].f(args[0], args[1], args[2], args[3]);
+
+	if (config.strace) {
+		fprintf(stderr, "%s(", syscalls[nr].name);
+		for (size_t i = 0; i < ARRSZE(syscalls[nr].fmt) && syscalls[nr].fmt[i]; i++) {
+			if (i)
+				fprintf(stderr, ", ");
+			fprintf(stderr, syscalls[nr].fmt[i], args[i]);
+		}
+
+		fprintf(stderr, ") = %d\n", ret);
+	}
+
+	return ret;
 }
