@@ -606,8 +606,20 @@ static renderer_t get_renderer(const char* name) {
 	return NULL;
 }
 
-static uint32_t parse_ptr(const char* str) {
-	return strtol(str, NULL, 0);
+static uint32_t parse_u32_or_die(const char* str) {
+	char *endptr = NULL;
+	errno = 0;
+	long long r = strtoll(str, &endptr, 0);
+	if (!errno && (r < 0 || r > INT32_MAX))
+		errno = ERANGE;
+
+	if (errno)
+		err(1, "strtoll(%s)", str);
+
+	if (*endptr)
+		errx(1, "strtoul(%s): Trailing \"%s\"", str, endptr);
+
+	return r;
 }
 
 static void help(const char* argv0) {
@@ -656,16 +668,16 @@ int main(int argc, char** argv) {
 				err(1, "open(%s)", optarg);
 			break;
 		case 'S': /* stack */
-			config.sp = parse_ptr(optarg);
+			config.sp = parse_u32_or_die(optarg);
 			break;
 		case 'H': /* heap */
-			config.brk = parse_ptr(optarg);
+			config.brk = parse_u32_or_die(optarg);
 			break;
 		case 'b': /* base address */
-			config.base = parse_ptr(optarg);
+			config.base = parse_u32_or_die(optarg);
 			break;
 		case 'l': /* limit */
-			config.limit_as_pages = parse_ptr(optarg);
+			config.limit_as_pages = parse_u32_or_die(optarg);
 			break;
 		case 's':
 			config.strace = 1;
