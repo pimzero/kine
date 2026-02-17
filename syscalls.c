@@ -264,7 +264,7 @@ int32_t syscall_dispatch(uint32_t nr, const syscall_args_t args) {
 		return -KENOSYS;
 	}
 
-	int32_t ret = syscalls[nr].f(args[0], args[1], args[2], args[3]);
+	int32_t ret = syscalls[nr].f(args[0], args[1], args[2]);
 
 	if (config.strace) {
 		fprintf(stderr, "%s(", syscalls[nr].name);

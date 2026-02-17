@@ -253,7 +253,6 @@ static void sigsys_handler(siginfo_t* siginfo, struct ucontext_t* ctx) {
 		ctx->uc_mcontext.gregs[REG(BX)],
 		ctx->uc_mcontext.gregs[REG(CX)],
 		ctx->uc_mcontext.gregs[REG(DX)],
-		ctx->uc_mcontext.gregs[REG(SI)],
 	};
 
 	ctx->uc_mcontext.gregs[REG(AX)] =

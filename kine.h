@@ -91,7 +91,7 @@ static inline int ring_pop(struct ring* rb, uint8_t* c) {
 	return 0;
 }
 
-typedef uint32_t syscall_args_t[4];
+typedef uint32_t syscall_args_t[3];
 
 int32_t syscall_dispatch(uint32_t sysnr, const syscall_args_t args);
 uint32_t getms(void);
