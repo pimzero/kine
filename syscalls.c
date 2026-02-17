@@ -279,7 +279,7 @@ unlock:
 
 #define not_implemented NULL
 
-static syscall_t syscalls[] = {
+static const syscall_t syscalls[] = {
 	[KSYSCALL_WRITE] = (syscall_t)sys_write,
 	[KSYSCALL_SBRK] = (syscall_t)sys_sbrk,
 	[KSYSCALL_GETKEY] = (syscall_t)sys_getkey,
