@@ -77,7 +77,6 @@
 
 #define SEGMENT_CODE 1
 #define SEGMENT_DATA 2
-#define SEGMENT_LINUX_GS 12
 
 #define SEGMENT_LDT (1 << 2)
 #define SEGMENT_GDT 0
