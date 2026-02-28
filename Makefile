@@ -1,7 +1,9 @@
 # RENDERERS ?= sdl2
 RENDERERS ?= sdl3
 
-CPPFLAGS=-D_GNU_SOURCE -MMD -I third_party/k/k/include
+K=./third_party/k
+
+CPPFLAGS=-D_GNU_SOURCE -MMD -I $(K)/k/include
 CFLAGS=-std=c99 -Wall -Wextra
 LDLIBS=-lpthread
 
@@ -32,13 +34,13 @@ GEN= \
      kstd.h \
      vgapalette.c \
 
-kstd.h: ./third_party/k/k/include/k/kstd.h
+kstd.h: $(K)/k/include/k/kstd.h
 	sed -E -e 's/^#define\s+([^\s]+\s)/#define K\1/' \
 	       -e 's/\<off_t\>/koff_t/g' \
 	       -e 's/\<ssize_t\>/kssize_t/g' \
 	       $< >$@
 
-vgapalette.c: ./third_party/k/k/libvga.c
+vgapalette.c: $(K)/k/libvga.c
 	sed -nE -e 's/^static/const/g' -e '/libvga_default_palette\[/,/}/ { p }' $< >$@
 
 gen_i386_hdr: CFLAGS:=-std=c99 -Wall -Wextra -m32
@@ -52,5 +54,12 @@ clean:
 	$(RM) $(BIN) $(OBJS) $(DEPS) $(GEN)
 
 -include $(DEPS)
+
+run-%: $(K)/roms/% $(BIN) FORCE
+	$(MAKE) -C "$(K)"
+	echo "$$(make -C $< -p | grep '^TARGET\>' | sed 's/TARGET\s*=\s*//')"
+	./$(BIN) -p "$(K)/iso/" "$(<)/$$(make -C "$<" -p | grep '^TARGET\>' | sed 's/TARGET\s*=\s*//')"
+
+FORCE:
 
 .PHONY: all clean
