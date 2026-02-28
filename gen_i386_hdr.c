@@ -10,13 +10,12 @@
 #define typeof(Value) __typeof__(Value)
 #endif
 
-#define SIGNED(Val) ((typeof(Val))(-1) < 0)
-
+#define IS_SIGNED(Val) ((typeof(Val))(-1) < 0)
 
 #define FIELD(Member) do { \
 	assert(offset <= offsetof(typeof(val), Member)); \
 	offset = offsetof(typeof(val), Member); \
-	printf("\t%sint%d_t " #Member ";\n", SIGNED(val.Member) ? "" : "u", \
+	printf("\t%sint%d_t " #Member ";\n", IS_SIGNED(val.Member) ? "" : "u", \
 	       sizeof(val.Member) * CHAR_BIT); \
 } while (0)
 
@@ -26,11 +25,6 @@
 	assert(__builtin_types_compatible_p(typeof(val.Member), Type)); \
 	printf("\t" #Type "_i386 " #Member ";\n"); \
 } while (0)
-#if 0
-	printf("\t%sint%d_t " #Member ";\n", SIGNED(val.Member) ? "" : "u", \
-	       sizeof(val.Member) * CHAR_BIT); \
-} while (0)
-#endif
 
 #define STRUCT(Type, Fields) do {\
 	struct Type val; \
@@ -40,7 +34,6 @@
 	printf("};\n"); \
 	printf("_Static_assert(sizeof(struct " #Type "_i386) == %d, "");\n\n", sizeof(val)); \
 } while (0)
-
 
 static void do_user_regs_struct(void)
 {
@@ -110,8 +103,5 @@ int main() {
 	printf("typedef uint32_t elf_gregset_t_i386[ELF_NGREG_I386];\n\n");
 	do_elf_prstatus();
 
-	printf("\n"
-	       "#endif /* I386_GEN_H */\n");
-
-	/* glibc: sysdeps/unix/sysv/linux/sys/procfs.h */
+	printf("#endif /* I386_GEN_H */\n");
 }
