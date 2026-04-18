@@ -86,8 +86,8 @@ static int32_t sys_SETVIDEO(int type) {
 	}
 }
 
-static long openat2(int dirfd, const char *path, struct open_how *how,
-		    size_t size) {
+static long linux_openat2(int dirfd, const char *path, struct open_how *how,
+			  size_t size) {
 	return syscall(SYS_openat2, dirfd, path, how, size);
 }
 
@@ -113,7 +113,7 @@ static int32_t sys_OPEN(uint32_t pathname, int flags) {
 		.mode = O_RDONLY,
 	};
 
-	int ret = errno2k(openat2(config.root, pathname_ptr, &how, sizeof(how)));
+	int ret = errno2k(linux_openat2(config.root, pathname_ptr, &how, sizeof(how)));
 	if (ret < 0)
 		return ret;
 
