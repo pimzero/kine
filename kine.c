@@ -682,25 +682,27 @@ static void setup_sighandlers(void) {
 
 extern const struct k_renderer __start_renderers, __stop_renderers;
 
-const char* list_renderers(void) {
+static const char* list_renderers(void) {
 	static char* list = NULL;
 	if (list)
 		return list;
 
-	size_t sz = 0;
+	const char join[] = ", ";
+
+	size_t n = 0;
 	for (const struct k_renderer* r = &__start_renderers;
 	     r < &__stop_renderers; r++)
-		sz += strlen(r->name) + 1;
+		n += strlen(r->name) + strlen(join);
 
-	list = calloc(1, sz);
+	char *end = list = malloc(n * sizeof(*list));
 	if (!list)
 		err(1, "calloc");
 
 	for (const struct k_renderer* r = &__start_renderers;
 	     r < &__stop_renderers; r++) {
 		if (r != &__start_renderers)
-			strcat(list, ",");
-		strcat(list, r->name);
+			end = stpcpy(end, join);
+		end = stpcpy(end, r->name);
 	}
 
 	return list;
