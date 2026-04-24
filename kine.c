@@ -710,14 +710,15 @@ int main(int argc, char** argv) {
 	init_k_state_t(&k_state);
 	entry_t entry = load_elf(argv[optind]);
 
-	pthread_t tid;
 	if (config.k_on_main_thread) {
-		if (seterrno(pthread_create(&tid, NULL, render_thread, renderer)) < 0)
+		if (seterrno(pthread_create(&(pthread_t){}, NULL, render_thread,
+					    renderer)) < 0)
 			err(1, "pthread_create");
 
 		k_thread(entry);
 	} else {
-		if (seterrno(pthread_create(&tid, NULL, k_thread, entry)) < 0)
+		if (seterrno(pthread_create(&(pthread_t){}, NULL, k_thread,
+					    entry)) < 0)
 			err(1, "pthread_create");
 
 		render_thread(renderer);
