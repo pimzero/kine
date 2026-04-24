@@ -405,15 +405,23 @@ static void k_prepare(void) {
 	k_state.starttime = getms();
 }
 
-static void* k_thread_syscall_user_dispatch(void* entry) {
+static int k_thread_syscall_user_dispatch_ex(entry_t entry, int probe) {
 	if (set_syscall_user_dispatch((char*)config.base + config.limit,
-				      (void*)~(0x1ULL<<63)) < 0)
+				      (void*)~(0x1ULL<<63)) < 0) {
+		if (probe)
+			return -1;
 		err(1, "set_syscall_user_dispatch");
+	}
 
 	k_setup_sighandler();
 
 	k_prepare();
 	k_start(entry);
+}
+
+static void* k_thread_syscall_user_dispatch(void* entry) {
+	k_thread_syscall_user_dispatch_ex(entry, 0);
+	errx(1, "k_thread_syscall_user_dispatch_ex");
 }
 
 static int ptrace_interrupted;
@@ -506,6 +514,12 @@ next:
 			err(1, "ptrace(SYSEMU)");
 	}
 	err(1, "waitpid");
+}
+
+static void* k_thread_auto(void* entry) {
+	if (k_thread_syscall_user_dispatch_ex(entry, 1) < 0)
+		return k_thread_ptrace(entry);
+	return NULL;
 }
 
 static const char* coredump_name(void) {
@@ -724,6 +738,7 @@ static struct {
 	k_thread_t* fn;
 } modes[] = {
 #define MODE(X) { .name = #X, .fn = k_thread_##X, }
+	MODE(auto),
 	MODE(syscall_user_dispatch),
 	MODE(ptrace),
 #undef MODE
@@ -749,7 +764,8 @@ static void help(const char* argv0) {
 	"  -b addr    \tAddress to load the rom (default: %#x)\n"
 	"  -l num     \tSize (limit) of the rom's segment (in pages) (default: %#x)\n"
 	"  -T         \tRuns k on the main thread\n"
-	"  -M mode    \tSelect emulation mode\n"
+	"  -M mode    \tSelect emulation mode (one of [auto, syscall_user_dispatch,\n"
+	"             \tptrace], default: auto)\n"
 	"  -C         \tSave rom coredump\n"
 	"  -r renderer\tSelects the renderer (one of: [%s], default: %s)\n",
 	argv0, USER_ESP, USER_ESP, BASE, LIMIT, list_renderers(),
