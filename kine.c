@@ -331,8 +331,6 @@ static void set_ldt_entry(unsigned nr, unsigned content,
 
 __attribute((noreturn))
 static void k_start(entry_t entry) {
-	k_state.starttime = getms();
-
 	__asm__ volatile(
 	"mov $" XSTR(SEG_REG(DATA, LDT, 3)) ", %%ebx\n\t"
 	"mov %%bx, %%ss\n\t"
@@ -392,13 +390,7 @@ static int arch_prctl(int op, unsigned long* addr) {
 }
 #endif
 
-static void* k_thread_syscall_user_dispatch(void* entry) {
-	if (set_syscall_user_dispatch((char*)config.base + config.limit,
-				      (void*)~(0x1ULL<<63)) < 0)
-		err(1, "set_syscall_user_dispatch");
-
-	k_setup_sighandler();
-
+static void k_prepare(void) {
 #if __x86_64__
 	if (arch_prctl(ARCH_GET_FS, &k_thread_fs) < 0)
 		err(1, "arch_prctl(ARCH_GET_FS)");
@@ -407,9 +399,18 @@ static void* k_thread_syscall_user_dispatch(void* entry) {
 	set_ldt_entry(SEGMENT_CODE, 2, 1);
 	set_ldt_entry(SEGMENT_DATA, 0, 0);
 
-	k_start(entry);
+	k_state.starttime = getms();
+}
 
-	return NULL;
+static void* k_thread_syscall_user_dispatch(void* entry) {
+	if (set_syscall_user_dispatch((char*)config.base + config.limit,
+				      (void*)~(0x1ULL<<63)) < 0)
+		err(1, "set_syscall_user_dispatch");
+
+	k_setup_sighandler();
+
+	k_prepare();
+	k_start(entry);
 }
 
 static const char* coredump_name(void) {
