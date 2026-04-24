@@ -309,10 +309,6 @@ static entry_t load_elf(const char* fname) {
 
 	k_state.brk = config.brk;
 
-	if (set_syscall_user_dispatch((char*)config.base + config.limit,
-				      (void*)~(0x1ULL<<63)) < 0)
-		err(1, "set_syscall_user_dispatch");
-
 	close(fd);
 
 	return (entry_t)(uintptr_t)ehdr.e_entry;
@@ -398,6 +394,10 @@ static int arch_prctl(int op, unsigned long* addr) {
 
 static void* k_thread(void* fname) {
 	entry_t entry = load_elf(fname);
+
+	if (set_syscall_user_dispatch((char*)config.base + config.limit,
+				      (void*)~(0x1ULL<<63)) < 0)
+		err(1, "set_syscall_user_dispatch");
 
 	k_setup_sighandler();
 
