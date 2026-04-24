@@ -58,7 +58,7 @@ clean:
 run-%: $(K)/roms/% $(BIN) FORCE
 	$(MAKE) -C "$(K)"
 	echo "$$(make -C $< -p | grep '^TARGET\>' | sed 's/TARGET\s*=\s*//')"
-	./$(BIN) -p "$(K)/iso/" "$(<)/$$(make -C "$<" -p | grep '^TARGET\>' | sed 's/TARGET\s*=\s*//')"
+	./$(BIN) -p "$(K)/iso/" "$(<)/$$(make -C "$<" -p | grep '^TARGET\>' | sed 's/TARGET\s*=\s*//')" $(FLAGS)
 
 FORCE:
 
