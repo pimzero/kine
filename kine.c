@@ -392,7 +392,7 @@ static int arch_prctl(int op, unsigned long* addr) {
 }
 #endif
 
-static void* k_thread(void* entry) {
+static void* k_thread_syscall_user_dispatch(void* entry) {
 	if (set_syscall_user_dispatch((char*)config.base + config.limit,
 				      (void*)~(0x1ULL<<63)) < 0)
 		err(1, "set_syscall_user_dispatch");
@@ -621,6 +621,25 @@ static uint32_t parse_u32_or_die(const char* str) {
 	return r;
 }
 
+typedef void* k_thread_t(void* entry);
+
+static struct {
+	const char* name;
+	k_thread_t* fn;
+} modes[] = {
+#define MODE(X) { .name = #X, .fn = k_thread_##X, }
+	MODE(syscall_user_dispatch),
+#undef MODE
+};
+
+static k_thread_t* get_mode(const char* name) {
+	for (size_t i = 0; i < ARRSZE(modes); i++)
+		if (!strcmp(name, modes[i].name))
+			return modes[i].fn;
+
+	errx(1, "Unsupported mode \"%s\"", name);
+}
+
 static void help(const char* argv0) {
 	fprintf(stderr,
 	"Usage: %s [arguments] /path/to/rom\n"
@@ -633,6 +652,7 @@ static void help(const char* argv0) {
 	"  -b addr    \tAddress to load the rom (default: %#x)\n"
 	"  -l num     \tSize (limit) of the rom's segment (in pages) (default: %#x)\n"
 	"  -T         \tRuns k on the main thread\n"
+	"  -M mode    \tSelect emulation mode\n"
 	"  -C         \tSave rom coredump\n"
 	"  -r renderer\tSelects the renderer (one of: [%s], default: %s)\n",
 	argv0, USER_ESP, USER_ESP, BASE, LIMIT, list_renderers(),
@@ -656,8 +676,9 @@ int main(int argc, char** argv) {
 	int opt;
 
 	renderer_t renderer = __start_renderers.render_thread;
+	k_thread_t* k_thread_fn = modes[0].fn;
 
-	while ((opt = getopt(argc, argv, "p:sS:H:b:hl:Tr:C")) != -1) {
+	while ((opt = getopt(argc, argv, "p:sS:H:b:hl:Tr:CM:")) != -1) {
 		switch (opt) {
 		case 'p':
 			if (config.root != -1)
@@ -693,6 +714,9 @@ int main(int argc, char** argv) {
 		case 'C':
 			setup_sighandlers();
 			break;
+		case 'M':
+			k_thread_fn = get_mode(optarg);
+			break;
 		default:
 			fprintf(stderr, "\n");
 			/* fallthrough */
@@ -715,9 +739,9 @@ int main(int argc, char** argv) {
 					    renderer)) < 0)
 			err(1, "pthread_create");
 
-		k_thread(entry);
+		k_thread_fn(entry);
 	} else {
-		if (seterrno(pthread_create(&(pthread_t){}, NULL, k_thread,
+		if (seterrno(pthread_create(&(pthread_t){}, NULL, k_thread_fn,
 					    entry)) < 0)
 			err(1, "pthread_create");
 
