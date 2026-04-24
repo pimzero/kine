@@ -644,10 +644,9 @@ static void* render_thread(void *data) {
 	renderer_t renderer = data;
 
 	sigset_t sigset;
-	if (sigemptyset(&sigset) < 0)
-		err(1, "sigemptyset");
-	if (sigaddset(&sigset, SIGSYS) < 0)
-		err(1, "sigaddset");
+	if (sigfillset(&sigset) < 0)
+		err(1, "sigfillset");
+
 	if (seterrno(pthread_sigmask(SIG_BLOCK, &sigset, NULL)))
 		err(1, "pthread_sigmask");
 
