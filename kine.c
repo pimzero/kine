@@ -26,14 +26,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <syscall.h>
 #include <sys/auxv.h>
+#include <syscall.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/procfs.h>
+#include <sys/ptrace.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <sys/user.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "kine.h"
@@ -413,6 +416,98 @@ static void* k_thread_syscall_user_dispatch(void* entry) {
 	k_start(entry);
 }
 
+static int ptrace_interrupted;
+
+static void ptrace_sa_handler(int signum) {
+	ptrace_interrupted = signum;
+}
+
+static void set_interrupt_sighandlers(void (*handler)(int)) {
+	const int sigs[] = { SIGTERM, SIGHUP, SIGINT, SIGQUIT, SIGPIPE, };
+
+	for (size_t i = 0; i < ARRSZE(sigs); i++) {
+		if (sigaction(sigs[i], &(struct sigaction) {
+				.sa_handler = handler,
+			      }, NULL) < 0)
+			err(1, "sigaction");
+	}
+}
+
+__attribute((noreturn))
+static void ptrace_interrupted_reraise(void) {
+	set_interrupt_sighandlers(SIG_DFL);
+
+	raise(ptrace_interrupted);
+
+	errx(1, "ptrace_interrupted_reraise");
+}
+
+static void* k_thread_ptrace(void* entry) {
+	k_prepare();
+
+	pid_t pid = fork();
+	if (!pid) {
+		if (ptrace(PTRACE_TRACEME) < 0)
+			err(1, "ptrace(PTRACE_TRACEME)");
+
+		if (raise(SIGSTOP) < 0)
+			err(1, "raise(SIGSTOP)");
+
+		k_start(entry);
+	}
+
+	set_interrupt_sighandlers(ptrace_sa_handler);
+
+	int wstatus;
+	while (waitpid(pid, &wstatus, __WALL) >= 0) {
+		if (ptrace_interrupted) {
+			if (kill(pid, 9) < 0)
+				err(1, "kill");
+			ptrace_interrupted_reraise();
+		}
+
+		if (!WIFSTOPPED(wstatus)) {
+			warnx("waitpid: unsupported");
+			continue;
+		}
+
+		if (!(WSTOPSIG(wstatus) & 0x80)) {
+			/* 0x80 not set: We are not handling a syscall. */
+
+			if (ptrace(PTRACE_SETOPTIONS, pid, NULL,
+				   PTRACE_O_TRACESYSGOOD) < 0)
+				err(1, "ptrace(SETOPTIONS)");
+			goto next;
+		}
+
+		struct user_regs_struct regs = {};
+		if (ptrace(PTRACE_GETREGS, pid, NULL, &regs) < 0)
+			err(1, "ptrace(GETREGS)");
+
+#ifdef __x86_64__
+#define UREG(X) regs.r##X
+#define rorig_ax orig_rax
+#else
+#define UREG(X) regs.e##X
+#define eorig_ax orig_eax
+#endif
+		UREG(ax) = syscall_dispatch(UREG(orig_ax),
+					    (syscall_args_t) {
+						UREG(bx),
+						UREG(cx),
+						UREG(dx),
+					    });
+
+		if (ptrace(PTRACE_SETREGS, pid, NULL, &regs) < 0)
+			err(1, "ptrace(SETREGS)");
+
+next:
+		if (ptrace(PTRACE_SYSEMU, pid, 0, 0) < 0)
+			err(1, "ptrace(SYSEMU)");
+	}
+	err(1, "waitpid");
+}
+
 static const char* coredump_name(void) {
 	static char out[128];
 
@@ -630,6 +725,7 @@ static struct {
 } modes[] = {
 #define MODE(X) { .name = #X, .fn = k_thread_##X, }
 	MODE(syscall_user_dispatch),
+	MODE(ptrace),
 #undef MODE
 };
 
