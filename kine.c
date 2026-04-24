@@ -41,8 +41,9 @@
 
 #if __x86_64__
 #include "i386_gen.h"
-#define elf_prstatus elf_prstatus_i386
-#define user_regs_struct user_regs_struct_i386
+#else
+#define elf_prstatus_i386 elf_prstatus
+#define user_regs_struct_i386 user_regs_struct
 #endif
 
 #define XSTR(S) STR(S)
@@ -471,7 +472,7 @@ static void coredump_handler(siginfo_t *si, void *ucontext) {
 			struct {
 				Elf32_Nhdr hdr;
 				char name[ALIGN_UP(sizeof(ELF_NOTE_CORE), 4)];
-				struct elf_prstatus desc;
+				struct elf_prstatus_i386 desc;
 			} prstatus;
 		} notes __attribute__((aligned(4)));
 	} coredump = {
@@ -522,7 +523,7 @@ static void coredump_handler(siginfo_t *si, void *ucontext) {
 		},
 	};
 
-	struct user_regs_struct regs = {
+	struct user_regs_struct_i386 regs = {
 		.ebx = ctx->uc_mcontext.gregs[REG(BX)],
 		.ecx = ctx->uc_mcontext.gregs[REG(CX)],
 		.edx = ctx->uc_mcontext.gregs[REG(DX)],
