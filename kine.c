@@ -703,7 +703,7 @@ int main(int argc, char** argv) {
 		}
 	}
 	if (config.root == -1)
-		errx(1, "Argument -p must be specfied");
+		warnx("Argument -p should be specfied");
 
 	if (!argv[optind])
 		errx(1, "missing rom file");
