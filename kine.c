@@ -392,9 +392,7 @@ static int arch_prctl(int op, unsigned long* addr) {
 }
 #endif
 
-static void* k_thread(void* fname) {
-	entry_t entry = load_elf(fname);
-
+static void* k_thread(void* entry) {
 	if (set_syscall_user_dispatch((char*)config.base + config.limit,
 				      (void*)~(0x1ULL<<63)) < 0)
 		err(1, "set_syscall_user_dispatch");
@@ -710,15 +708,16 @@ int main(int argc, char** argv) {
 		errx(1, "missing rom file");
 
 	init_k_state_t(&k_state);
+	entry_t entry = load_elf(argv[optind]);
 
 	pthread_t tid;
 	if (config.k_on_main_thread) {
 		if (seterrno(pthread_create(&tid, NULL, render_thread, renderer)) < 0)
 			err(1, "pthread_create");
 
-		k_thread(argv[optind]);
+		k_thread(entry);
 	} else {
-		if (seterrno(pthread_create(&tid, NULL, k_thread, argv[optind])) < 0)
+		if (seterrno(pthread_create(&tid, NULL, k_thread, entry)) < 0)
 			err(1, "pthread_create");
 
 		render_thread(renderer);
