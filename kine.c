@@ -164,7 +164,7 @@ static int set_syscall_user_dispatch(void* start, void* end) {
 }
 
 static int modify_ldt(int func, struct user_desc* ptr, unsigned long count) {
-    return syscall(SYS_modify_ldt, func, ptr, count);
+	return syscall(SYS_modify_ldt, func, ptr, count);
 }
 
 #ifdef __x86_64__
