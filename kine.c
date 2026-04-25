@@ -521,6 +521,8 @@ static void k_prepare(void) {
 	k_state.starttime = getms();
 }
 
+static void setup_coredump_sighandlers(void);
+
 static int k_thread_syscall_user_dispatch_ex(entry_t entry, int probe) {
 	if (set_syscall_user_dispatch((char*)config.base + config.limit,
 				      (void*)~(0x1ULL<<63)) < 0) {
@@ -528,6 +530,9 @@ static int k_thread_syscall_user_dispatch_ex(entry_t entry, int probe) {
 			return -1;
 		err(1, "set_syscall_user_dispatch");
 	}
+
+	if (config.coredump)
+		setup_coredump_sighandlers();
 
 	k_setup_sighandler();
 
@@ -627,23 +632,29 @@ static void* k_thread_ptrace(void* entry) {
 			   WSTOPSIG(wstatus) == SIGILL ||
 			   WSTOPSIG(wstatus) == SIGSEGV ||
 			   WSTOPSIG(wstatus) == SIGTRAP) {
-			struct user_regs_struct regs = {};
-			if (ptrace(PTRACE_GETREGS, pid, NULL, &regs) < 0)
-				err(1, "ptrace(GETREGS)");
 
-			coredump_write(&(struct user_regs_struct_i386) {
-					.ebx = UREG(bx),
-					.ecx = UREG(cx),
-					.edx = UREG(dx),
-					.esi = UREG(si),
-					.edi = UREG(di),
-					.ebp = UREG(bp),
-					.eax = UREG(ax),
-					.eip = UREG(ip),
-					.esp = UREG(sp),
-					.eflags = regs.eflags,
-					.orig_eax = UREG(orig_ax),
-				       });
+			if (config.coredump) {
+				struct user_regs_struct regs = {};
+				if (ptrace(PTRACE_GETREGS, pid, NULL, &regs) < 0)
+					err(1, "ptrace(GETREGS)");
+
+				coredump_write(&(struct user_regs_struct_i386) {
+						.ebx = UREG(bx),
+						.ecx = UREG(cx),
+						.edx = UREG(dx),
+						.esi = UREG(si),
+						.edi = UREG(di),
+						.ebp = UREG(bp),
+						.eax = UREG(ax),
+						.eip = UREG(ip),
+						.esp = UREG(sp),
+						.eflags = regs.eflags,
+						.orig_eax = UREG(orig_ax),
+						});
+			} else {
+				fprintf(stderr, "Fatal signal %d\n",
+					WSTOPSIG(wstatus));
+			}
 			if (kill(pid, 9) < 0)
 				err(1, "kill");
 			continue;
@@ -859,7 +870,7 @@ int main(int argc, char** argv) {
 			help(argv[0]);
 			exit(1);
 		case 'C':
-			setup_coredump_sighandlers();
+			config.coredump = 1;
 			break;
 		case 'M':
 			k_thread_fn = get_mode(optarg);
