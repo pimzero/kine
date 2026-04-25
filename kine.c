@@ -341,41 +341,24 @@ void coredump_write(const struct user_regs_struct_i386 *regs) {
 	close(fd);
 }
 
-extern const struct k_renderer __start_renderers, __stop_renderers;
-
-static const char* list_renderers(void) {
-	static char* list = NULL;
-	if (list)
-		return list;
-
+static const char* list_modules(const struct module_class* class) {
 	const char join[] = ", ";
 
 	size_t n = 0;
-	for (const struct k_renderer* r = &__start_renderers;
-	     r < &__stop_renderers; r++)
-		n += strlen(r->name) + strlen(join);
+	for (size_t i = 0; i < class->size(); i++)
+		n += strlen(class->names[i]) + strlen(join);
 
-	char *end = list = malloc(n * sizeof(*list));
+	char *list, *end = list = malloc(n * sizeof(*list));
 	if (!list)
 		err(1, "calloc");
 
-	for (const struct k_renderer* r = &__start_renderers;
-	     r < &__stop_renderers; r++) {
-		if (r != &__start_renderers)
+	for (size_t i = 0; i < class->size(); i++) {
+		if (i)
 			end = stpcpy(end, join);
-		end = stpcpy(end, r->name);
+		end = stpcpy(end, class->names[i]);
 	}
 
 	return list;
-}
-
-static renderer_t get_renderer(const char* name) {
-	for (const struct k_renderer* r = &__start_renderers;
-	     r < &__stop_renderers; r++)
-		if (!strcmp(r->name, name))
-			return r->render_thread;
-
-	return NULL;
 }
 
 static uint32_t parse_u32_or_die(const char* str) {
@@ -442,8 +425,8 @@ static void help(const char* argv0) {
 	"             \tptrace], default: auto)\n"
 	"  -C         \tSave rom coredump\n"
 	"  -r renderer\tSelects the renderer (one of: [%s], default: %s)\n",
-	argv0, USER_ESP, USER_ESP, BASE, LIMIT, list_renderers(),
-	__start_renderers.name);
+	argv0, USER_ESP, USER_ESP, BASE, LIMIT, list_modules(&module_renderer),
+	module_renderer.names[0]);
 }
 
 static void* render_thread(void *data) {
@@ -462,7 +445,7 @@ static void* render_thread(void *data) {
 int main(int argc, char** argv) {
 	int opt;
 
-	renderer_t renderer = __start_renderers.render_thread;
+	renderer_t renderer = *module_renderer_get(0);
 	k_thread_t* k_thread_fn = modes[0].fn;
 
 	while ((opt = getopt(argc, argv, "p:sS:H:b:hl:Tr:CM:")) != -1) {
@@ -491,13 +474,16 @@ int main(int argc, char** argv) {
 		case 'T':
 			config.k_on_main_thread = 1;
 			break;
-		case 'r':
-			renderer = get_renderer(optarg);
-			if (renderer)
-				break;
-			warnx("Invalid renderer \"%s\"", optarg);
-			help(argv[0]);
-			exit(1);
+		case 'r': {
+			const renderer_t* found = module_renderer_find(optarg);
+			if (!found) {
+				warnx("Invalid renderer \"%s\"", optarg);
+				help(argv[0]);
+				exit(1);
+			}
+			renderer = *found;
+			break;
+		}
 		case 'C':
 			config.coredump = 1;
 			break;

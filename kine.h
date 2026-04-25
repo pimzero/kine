@@ -140,18 +140,53 @@ typedef uint32_t syscall_args_t[3];
 int32_t syscall_dispatch(uint32_t sysnr, const syscall_args_t args);
 uint32_t getms(void);
 
-typedef void* (*renderer_t)(struct k_state_t*);
+# define XCONCAT(X, Y) X##Y
+# define CONCAT(X, Y) XCONCAT(X, Y)
 
-struct k_renderer {
-	const char* name;
-	const renderer_t render_thread;
+#define UNIQUE_ID(Name) CONCAT(Name, __COUNTER__)
+
+#define DEFINE_MODULE(Class, Name, Value) \
+	__attribute__((used, section("module_" #Class "_names"))) \
+	static const char* const UNIQUE_ID(Class##_name) = #Name; \
+	__attribute__((used, section("module_" #Class "_values"))) \
+	static module_##Class##_value_t UNIQUE_ID(Class##_value) = Value; \
+
+struct module_class {
+	size_t (*size)(void);
+	const char* const* names;
 };
 
-#define DEFINE_RENDERER(Name, Func) \
-	__attribute__((section("renderers"))) const struct k_renderer k_render_##Name = { \
-		.name = #Name, \
-		.render_thread = Func, \
-	};
+#define DEFINE_MODULE_CLASS(Class, Type) \
+	typedef Type module_##Class##_value_t; \
+	extern const char* const __start_module_##Class##_names, \
+			 * const __stop_module_##Class##_names;  \
+	extern module_##Class##_value_t __start_module_##Class##_values, \
+					__stop_module_##Class##_values;  \
+	static inline size_t module_##Class##_size(void) { \
+		return &__stop_module_##Class##_names - &__start_module_##Class##_names; \
+	} \
+	static inline module_##Class##_value_t* module_##Class##_get_values(void) { \
+		return &__start_module_##Class##_values; \
+	} \
+	static inline module_##Class##_value_t* module_##Class##_get(size_t i) { \
+		return module_##Class##_get_values() + i; \
+	} \
+	__attribute__((unused)) \
+	static struct module_class module_##Class = { \
+		.size = module_##Class##_size, \
+		.names = &__start_module_##Class##_names, \
+	}; \
+	static inline module_##Class##_value_t* module_##Class##_find(const char* name) { \
+		extern int strcmp(const char *s1, const char *s2); \
+		for (size_t i = 0; i < module_##Class##_size(); i++) \
+			if (!strcmp(name, module_##Class.names[i])) \
+				return module_##Class##_get(i); \
+		return NULL; \
+	} \
+
+typedef void* (*renderer_t)(struct k_state_t*);
+DEFINE_MODULE_CLASS(renderer, const renderer_t);
+#define DEFINE_RENDERER(Name, Value) DEFINE_MODULE(renderer, Name, Value)
 
 #define FLAG_KEY_RELEASED 0x80
 
