@@ -10,7 +10,16 @@ BINS=kine gen_i386_hdr
 
 kine_CPPFLAGS=-D_GNU_SOURCE -I $(K)/k/include
 kine_LDLIBS=-lpthread
-kine_OBJS=kine.o syscalls.o vgapalette.o mode_auto.o mode_syscall_user_dispatch.o mode_ptrace.o
+kine_OBJS= \
+	   kine.o \
+	   syscalls.o \
+	   vgapalette.o \
+	   mode_auto.o \
+	   mode_syscall_user_dispatch.o \
+	   mode_ptrace.o \
+
+# The order of mode_*.o objects is meaningful: this specifies the default
+# mode, and the preference order for -Mauto.
 
 gen_i386_hdr_OBJS=gen_i386_hdr.o
 
@@ -52,14 +61,16 @@ vgapalette.c: $(K)/k/libvga.c
 	sed -nE -e 's/^static/const/g' -e '/libvga_default_palette\[/,/}/ { p }' $< >$@
 
 gen_i386_hdr: CFLAGS:=$(CFLAGS) -m32
+gen_i386_hdr: CPPFLAGS:=$(CPPFLAGS) -D_GNU_SOURCE
 gen_i386_hdr: LDFLAGS:=$(LDFLAGS) -m32
+gen_i386_hdr: LDLIBS:=
 gen_i386_hdr: $(gen_i386_hdr_OBJS)
 
 i386_gen.h: gen_i386_hdr
 	./$^ > $@
 
 clean:
-	$(RM) $(BINS) $(OBJS) $(DEPS) $(GEN)
+	$(RM) $(BINS) $(OBJS) $(DEPS) $(GEN) $(wildcard .*.cmd)
 	make -f testrom.mk clean K="$(K)"
 
 testrom: FORCE
@@ -78,3 +89,28 @@ run-%: $(K)/roms/% kine FORCE
 FORCE:
 
 .PHONY: all clean
+
+^!FORCE = $(filter-out FORCE,$^)
+?!FORCE = $(filter-out FORCE,$?)
+
+%.o: %.c FORCE
+	$(call if_changed,$(COMPILE.c) $(OUTPUT_OPTION) $<)
+
+%: %.o FORCE
+	$(call if_changed,$(LINK.o) $(filter %.o,$(^!FORCE)) $(LDLIBS) -o $@)
+
+# Provide a "if_changed" function à la Kbuild.
+empty :=
+space := $(empty) $(empty)
+
+_escape_spaces = $(subst $(space),_,$(strip $1))
+_cmp_strings = $(filter-out x$(call _escape_spaces,$1),x$(call _escape_spaces,$2))
+
+_savedcmd = $(dir $@)/.$(notdir $@).cmd
+
+define if_changed
+	$(if $(filter FORCE,$?),,$(error missing FORCE prereq))\
+	$(if $(?!FORCE)$(call _cmp_strings,$1,$(file <$(_savedcmd))),
+		$1 $(file >$(_savedcmd),$1),
+		)
+endef
