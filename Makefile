@@ -10,7 +10,7 @@ BINS=kine gen_i386_hdr
 
 kine_CPPFLAGS=-D_GNU_SOURCE -I $(K)/k/include
 kine_LDLIBS=-lpthread
-kine_OBJS=kine.o syscalls.o vgapalette.o
+kine_OBJS=kine.o syscalls.o vgapalette.o mode_syscall_user_dispatch.o mode_ptrace.o
 
 gen_i386_hdr_OBJS=gen_i386_hdr.o
 

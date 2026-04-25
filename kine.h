@@ -17,11 +17,14 @@
 #ifndef KINE_H
 #define KINE_H
 
-#include <stdint.h>
 #include <pthread.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #define ARRSZE(X) (sizeof(X) / sizeof(*(X)))
+
+#define XSTR(S) STR(S)
+#define STR(S) #S
 
 #define container_of(ptr, type, member) \
 	((type *)(((void *)(ptr)) - offsetof(type, member)))
@@ -87,6 +90,32 @@ static inline void k_unlock_ref(struct k_state_t** ptr) {
 
 extern struct config_t config;
 extern struct k_state_t k_state;
+
+typedef void (*entry_t)(void);
+void k_prepare(void);
+__attribute((noreturn))
+void k_start(entry_t entry);
+
+#define SEGMENT_CODE 1
+#define SEGMENT_DATA 2
+#define SEGMENT_LINUX_GS 12
+
+#define SEGMENT_LDT (1 << 2)
+#define SEGMENT_GDT 0
+#define SEGMENT_RPL3 (0x3)
+#define SEG_REG(Segment, Table, Rpl) \
+	((SEGMENT_##Segment << 3) | SEGMENT_##Table | SEGMENT_RPL##Rpl)
+
+#if __x86_64__
+#include "i386_gen.h"
+#else
+#include <sys/procfs.h>
+#include <sys/user.h>
+#define elf_prstatus_i386 elf_prstatus
+#define user_regs_struct_i386 user_regs_struct
+#endif
+
+void coredump_write(const struct user_regs_struct_i386 *regs);
 
 static inline int ring_push(struct ring* rb, uint8_t c) {
 	if ((rb->z + 1) % ARRSZE(rb->buf) == rb->a)

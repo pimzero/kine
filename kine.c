@@ -15,7 +15,6 @@
  */
 
 #include <asm/ldt.h>
-#include <asm/prctl.h>
 #include <elf.h>
 #include <err.h>
 #include <errno.h>
@@ -26,49 +25,21 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/auxv.h>
 #include <syscall.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
-#include <sys/procfs.h>
-#include <sys/ptrace.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include <sys/user.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 #include "kine.h"
 #include "kstd.h"
 
-#if __x86_64__
-#include "i386_gen.h"
-#else
-#define elf_prstatus_i386 elf_prstatus
-#define user_regs_struct_i386 user_regs_struct
-#endif
-
-#define XSTR(S) STR(S)
-#define STR(S) #S
-
 #define ALIGN_UP(X, N) (((X) + (N - 1)) & ~(N - 1))
 
 #ifndef typeof
 #define typeof(Value) __typeof__(Value)
-#endif
-
-#ifndef PR_SET_SYSCALL_USER_DISPATCH
-#define PR_SET_SYSCALL_USER_DISPATCH 59
-#endif
-#ifndef PR_SYS_DISPATCH_ON
-#define PR_SYS_DISPATCH_ON 1
-#endif
-#ifndef HWCAP2_FSGSBASE
-#define HWCAP2_FSGSBASE        (1 << 1)
-#endif
-#ifndef SYS_USER_DISPATCH
-#define SYS_USER_DISPATCH 2
 #endif
 
 #define PROT_RWX (PROT_READ|PROT_WRITE|PROT_EXEC)
@@ -78,18 +49,6 @@
 #define USER_ESP 0x90000
 #define BASE 65536
 #define LIMIT 10240
-
-#define SEGMENT_CODE 1
-#define SEGMENT_DATA 2
-#define SEGMENT_LINUX_GS 12
-
-#define SEGMENT_LDT (1 << 2)
-#define SEGMENT_GDT 0
-#define SEGMENT_RPL3 (0x3)
-#define SEG_REG(Segment, Table, Rpl) \
-	((SEGMENT_##Segment << 3) | SEGMENT_##Table | SEGMENT_RPL##Rpl)
-
-typedef void (*entry_t)(void);
 
 static struct render_state render_state_default;
 
@@ -168,110 +127,8 @@ void render_state_set(struct k_state_t* k, struct render_state* render_state) {
 	__atomic_store_n(&k->render_state, render_state, __ATOMIC_RELAXED);
 }
 
-static int set_syscall_user_dispatch(void* start, void* end) {
-	return prctl(PR_SET_SYSCALL_USER_DISPATCH, PR_SYS_DISPATCH_ON, start,
-		     end, NULL);
-}
-
 static int modify_ldt(int func, struct user_desc* ptr, unsigned long count) {
 	return syscall(SYS_modify_ldt, func, ptr, count);
-}
-
-#ifdef __x86_64__
-static int supports_fsgsbase(void) {
-	return !!(getauxval(AT_HWCAP2) & HWCAP2_FSGSBASE);
-}
-#endif
-
-#ifdef __x86_64__
-#define R(R) "%r"#R
-#else
-#define R(R) "%e"#R
-#endif
-
-#define MAKE_SIGNAL_HANDLERS_ASM(Name, Prepare)		\
-void sigsys_##Name(int sig, siginfo_t *info, void *ucontext);	\
-void coredump_##Name(int sig, siginfo_t *info, void *ucontext);	\
-							\
-__asm__(						\
-".pushsection .text\n"					\
-"sigsys_" #Name ":\n\t"					\
-"push " R(bp) "\n\t"					\
-"mov " R(sp) ", " R(bp) "\n\t"				\
-Prepare							\
-"call sigsys_handler\n\t"				\
-"leave\n\t"						\
-"ret\n"							\
-".size sigsys_" #Name ", .-sigsys_" #Name "\n"		\
-"\n"							\
-"coredump_" #Name ":\n\t"				\
-"push " R(bp) "\n\t"					\
-"mov " R(sp) ", " R(bp) "\n\t"				\
-Prepare							\
-"call coredump_handler\n\t"				\
-"leave\n\t"						\
-"ret\n"							\
-".size coredump_" #Name ", .-coredump_" #Name "\n"	\
-".popsection\n"						\
-)
-
-#ifdef __x86_64__
-
-MAKE_SIGNAL_HANDLERS_ASM(handler_asm,
-"push %rdi\n\t"
-"push %rsi\n\t"
-"push %rdx\n\t"
-
-"mov $" XSTR(SYS_arch_prctl) ", %rax\n\t"
-"mov $" XSTR(ARCH_SET_FS) ", %rdi\n\t"
-"mov k_thread_fs(%rip), %rsi\n\t"
-"syscall\n\t"
-
-"pop %rsi\n\t" /* ucontext */
-"pop %rdi\n\t" /* siginfo */
-"add $8, %rsp\n\t");
-
-MAKE_SIGNAL_HANDLERS_ASM(handler_asm_fsgsbase,
-"mov k_thread_fs(%rip), %rdi\n\t"
-"wrfsbase %rdi\n\t"
-"mov %rsi, %rdi\n\t"
-"mov %rdx, %rsi\n\t");
-
-#define GET_SIGACTION(Kind) (supports_fsgsbase() ? Kind##_handler_asm_fsgsbase : Kind##_handler_asm)
-
-#else
-
-MAKE_SIGNAL_HANDLERS_ASM(handler_asm,
-"mov $0, %bx\n\t"
-"mov %bx, %fs\n\t"
-"mov $" XSTR(SEG_REG(LINUX_GS, GDT, 3)) ", %bx\n\t"
-"mov %bx, %gs\n\t"
-
-"push 16(%ebp)\n\t" /* ctx */
-"push 12(%ebp)\n\t" /* siginfo */);
-
-#define GET_SIGACTION(Kind) Kind##_handler_asm
-
-#endif
-
-__attribute__ ((used))
-static void sigsys_handler(siginfo_t* siginfo, struct ucontext_t* ctx) {
-	if (siginfo->si_code != SYS_USER_DISPATCH)
-		return;
-
-#ifdef __x86_64__
-#define REG(X) REG_R##X
-#else
-#define REG(X) REG_E##X
-#endif
-	syscall_args_t args = {
-		ctx->uc_mcontext.gregs[REG(BX)],
-		ctx->uc_mcontext.gregs[REG(CX)],
-		ctx->uc_mcontext.gregs[REG(DX)],
-	};
-
-	ctx->uc_mcontext.gregs[REG(AX)] =
-		syscall_dispatch(siginfo->si_syscall, args);
 }
 
 static entry_t load_elf(const char* fname) {
@@ -342,8 +199,15 @@ static void set_ldt_entry(unsigned nr, unsigned content,
 		err(1, "modify_ldt");
 }
 
+void k_prepare(void) {
+	set_ldt_entry(SEGMENT_CODE, 2, 1);
+	set_ldt_entry(SEGMENT_DATA, 0, 0);
+
+	k_state.starttime = getms();
+}
+
 __attribute((noreturn))
-static void k_start(entry_t entry) {
+void k_start(entry_t entry) {
 	__asm__ volatile(
 	"mov $" XSTR(SEG_REG(DATA, LDT, 3)) ", %%ebx\n\t"
 	"mov %%bx, %%ss\n\t"
@@ -375,38 +239,6 @@ static void k_start(entry_t entry) {
 	__builtin_unreachable();
 }
 
-static void set_sigaction_on_stack(int sig, void (*f)(int, siginfo_t*, void*)) {
-	struct sigaction sa = {
-		.sa_sigaction = f,
-		.sa_flags = SA_SIGINFO|SA_ONSTACK,
-	};
-	if (sigaction(sig, &sa, NULL) < 0)
-		err(1, "sigaction");
-}
-
-static void k_setup_sighandler(void) {
-	stack_t ss = {
-		.ss_sp = malloc(SIGSTKSZ),
-		.ss_size = SIGSTKSZ,
-		.ss_flags = 0
-	};
-	if (!ss.ss_sp)
-		err(1, "malloc");
-
-	if (sigaltstack(&ss, NULL) < 0)
-		err(1, "sigaltstack");
-
-	set_sigaction_on_stack(SIGSYS, GET_SIGACTION(sigsys));
-}
-
-#if __x86_64__
-static unsigned long k_thread_fs;
-
-static int arch_prctl(int op, unsigned long* addr) {
-	return syscall(SYS_arch_prctl, op, addr);
-}
-#endif
-
 static void *memrchr_inv(const void *s, int c, size_t n) {
 	const char *ptr = s;
 	while (n && ptr[n - 1] == c)
@@ -423,7 +255,7 @@ static const char* coredump_name(void) {
 	return out;
 }
 
-static void coredump_write(const struct user_regs_struct_i386 *regs) {
+void coredump_write(const struct user_regs_struct_i386 *regs) {
 	const char* last_set_byte = memrchr_inv((void*)config.base, 0, config.limit);
 	size_t filesz = last_set_byte - (const char*)config.base;
 
@@ -509,220 +341,6 @@ static void coredump_write(const struct user_regs_struct_i386 *regs) {
 	close(fd);
 }
 
-static void k_prepare(void) {
-#if __x86_64__
-	if (arch_prctl(ARCH_GET_FS, &k_thread_fs) < 0)
-		err(1, "arch_prctl(ARCH_GET_FS)");
-#endif
-
-	set_ldt_entry(SEGMENT_CODE, 2, 1);
-	set_ldt_entry(SEGMENT_DATA, 0, 0);
-
-	k_state.starttime = getms();
-}
-
-static void setup_coredump_sighandlers(void);
-
-static int k_thread_syscall_user_dispatch_ex(entry_t entry, int probe) {
-	if (set_syscall_user_dispatch((char*)config.base + config.limit,
-				      (void*)~(0x1ULL<<63)) < 0) {
-		if (probe)
-			return -1;
-		err(1, "set_syscall_user_dispatch");
-	}
-
-	if (config.coredump)
-		setup_coredump_sighandlers();
-
-	k_setup_sighandler();
-
-	k_prepare();
-	k_start(entry);
-}
-
-static void* k_thread_syscall_user_dispatch(void* entry) {
-	k_thread_syscall_user_dispatch_ex(entry, 0);
-	errx(1, "k_thread_syscall_user_dispatch_ex");
-}
-
-static int ptrace_interrupted;
-
-static void ptrace_sa_handler(int signum) {
-	ptrace_interrupted = signum;
-}
-
-static void set_interrupt_sighandlers(void (*handler)(int)) {
-	const int sigs[] = { SIGTERM, SIGHUP, SIGINT, SIGQUIT, SIGPIPE, };
-
-	for (size_t i = 0; i < ARRSZE(sigs); i++) {
-		if (sigaction(sigs[i], &(struct sigaction) {
-				.sa_handler = handler,
-			      }, NULL) < 0)
-			err(1, "sigaction");
-	}
-}
-
-__attribute((noreturn))
-static void ptrace_interrupted_reraise(void) {
-	set_interrupt_sighandlers(SIG_DFL);
-
-	raise(ptrace_interrupted);
-
-	errx(1, "ptrace_interrupted_reraise");
-}
-
-static void* k_thread_ptrace(void* entry) {
-	k_prepare();
-
-	pid_t pid = fork();
-	if (!pid) {
-		if (ptrace(PTRACE_TRACEME) < 0)
-			err(1, "ptrace(PTRACE_TRACEME)");
-
-		if (raise(SIGSTOP) < 0)
-			err(1, "raise(SIGSTOP)");
-
-		k_start(entry);
-	}
-
-	set_interrupt_sighandlers(ptrace_sa_handler);
-
-	int wstatus;
-	while (waitpid(pid, &wstatus, __WALL) >= 0) {
-		if (ptrace_interrupted) {
-			if (kill(pid, 9) < 0)
-				err(1, "kill");
-			ptrace_interrupted_reraise();
-		}
-
-		if (!WIFSTOPPED(wstatus)) {
-			warnx("waitpid: unsupported");
-			continue;
-		}
-
-		if (WSTOPSIG(wstatus) == SIGSTOP) {
-			/* 0x80 not set: We are not handling a syscall. */
-
-			if (ptrace(PTRACE_SETOPTIONS, pid, NULL,
-				   PTRACE_O_TRACESYSGOOD) < 0)
-				err(1, "ptrace(SETOPTIONS)");
-		} else if (WSTOPSIG(wstatus) == (SIGTRAP|0x80)) {
-			struct user_regs_struct regs = {};
-			if (ptrace(PTRACE_GETREGS, pid, NULL, &regs) < 0)
-				err(1, "ptrace(GETREGS)");
-
-#ifdef __x86_64__
-#define UREG(X) regs.r##X
-#define rorig_ax orig_rax
-#else
-#define UREG(X) regs.e##X
-#define eorig_ax orig_eax
-#endif
-			UREG(ax) = syscall_dispatch(UREG(orig_ax),
-						    (syscall_args_t) {
-							UREG(bx),
-							UREG(cx),
-							UREG(dx),
-						    });
-
-			if (ptrace(PTRACE_SETREGS, pid, NULL, &regs) < 0)
-				err(1, "ptrace(SETREGS)");
-		} else if (WSTOPSIG(wstatus) == SIGBUS ||
-			   WSTOPSIG(wstatus) == SIGFPE ||
-			   WSTOPSIG(wstatus) == SIGILL ||
-			   WSTOPSIG(wstatus) == SIGSEGV ||
-			   WSTOPSIG(wstatus) == SIGTRAP) {
-
-			if (config.coredump) {
-				struct user_regs_struct regs = {};
-				if (ptrace(PTRACE_GETREGS, pid, NULL, &regs) < 0)
-					err(1, "ptrace(GETREGS)");
-
-				coredump_write(&(struct user_regs_struct_i386) {
-						.ebx = UREG(bx),
-						.ecx = UREG(cx),
-						.edx = UREG(dx),
-						.esi = UREG(si),
-						.edi = UREG(di),
-						.ebp = UREG(bp),
-						.eax = UREG(ax),
-						.eip = UREG(ip),
-						.esp = UREG(sp),
-						.eflags = regs.eflags,
-						.orig_eax = UREG(orig_ax),
-						});
-			} else {
-				fprintf(stderr, "Fatal signal %d\n",
-					WSTOPSIG(wstatus));
-			}
-			if (kill(pid, 9) < 0)
-				err(1, "kill");
-			continue;
-		} else {
-			errx(1, "waitpid: unsupported signal");
-		}
-
-		if (ptrace(PTRACE_SYSEMU, pid, 0, 0) < 0)
-			err(1, "ptrace(SYSEMU)");
-	}
-	err(1, "waitpid");
-}
-
-static void* k_thread_auto(void* entry) {
-	if (k_thread_syscall_user_dispatch_ex(entry, 1) < 0)
-		return k_thread_ptrace(entry);
-	return NULL;
-}
-
-static uint16_t get_cs(const ucontext_t* ctx) {
-#if __x86_64__
-	return ctx->uc_mcontext.gregs[REG_CSGSFS] & 0xffff;
-#else
-	return ctx->uc_mcontext.gregs[REG_CS];
-#endif
-}
-
-__attribute__ ((used))
-static void coredump_handler(siginfo_t *si, void *ucontext) {
-	ucontext_t *ctx = ucontext;
-
-	if (get_cs(ctx) != SEG_REG(CODE, LDT, 3)) {
-		struct sigaction sa = {
-			.sa_handler = SIG_DFL,
-		};
-		if (sigaction(si->si_signo, &sa, NULL) < 0)
-			err(1, "sigaction(SIG_DFL)");
-
-		return;
-	}
-
-	struct user_regs_struct_i386 regs = {
-		.ebx = ctx->uc_mcontext.gregs[REG(BX)],
-		.ecx = ctx->uc_mcontext.gregs[REG(CX)],
-		.edx = ctx->uc_mcontext.gregs[REG(DX)],
-		.esi = ctx->uc_mcontext.gregs[REG(SI)],
-		.edi = ctx->uc_mcontext.gregs[REG(DI)],
-		.ebp = ctx->uc_mcontext.gregs[REG(BP)],
-		.eax = ctx->uc_mcontext.gregs[REG(AX)],
-		.eip = ctx->uc_mcontext.gregs[REG(IP)],
-		.esp = ctx->uc_mcontext.gregs[REG(SP)],
-		.eflags = ctx->uc_mcontext.gregs[REG_EFL],
-		.orig_eax = ctx->uc_mcontext.gregs[REG(AX)],
-	};
-	coredump_write(&regs);
-
-	const char core_dumped_log[] = "Core dumped.\n";
-	write(2, core_dumped_log, sizeof(core_dumped_log) - 1);
-	_Exit(1);
-}
-
-static void setup_coredump_sighandlers(void) {
-	const int sigs[] = { SIGBUS, SIGFPE, SIGILL, SIGSEGV, SIGTRAP, };
-
-	for (size_t i = 0; i < ARRSZE(sigs); i++)
-		set_sigaction_on_stack(sigs[i], GET_SIGACTION(coredump));
-}
-
 extern const struct k_renderer __start_renderers, __stop_renderers;
 
 static const char* list_renderers(void) {
@@ -777,6 +395,17 @@ static uint32_t parse_u32_or_die(const char* str) {
 }
 
 typedef void* k_thread_t(void* entry);
+
+void* k_thread_syscall_user_dispatch(void* entry);
+void* k_thread_ptrace(void* entry);
+
+static void* k_thread_auto(void* entry) {
+	extern int k_thread_syscall_user_dispatch_ex(entry_t entry, int probe);
+
+	if (k_thread_syscall_user_dispatch_ex(entry, 1) < 0)
+		return k_thread_ptrace(entry);
+	return NULL;
+}
 
 static struct {
 	const char* name;
