@@ -30,7 +30,7 @@ $(foreach renderer,$(RENDERERS),\
 	$(eval include $(renderer).mk) \
 	$(foreach var,LDLIBS OBJS, \
 		$(eval kine_$(var) += $($(var)_$(renderer))))\
-	$(eval $(OBJS_$(renderer)): CFLAGS += $(CFLAGS_$(renderer))))
+	$(eval $(OBJS_$(renderer)): override CFLAGS += $(CFLAGS_$(renderer))))
 $(foreach x,$(RENDERERS),\
 	$(foreach y,$(RENDERERS),\
 		$(if $(findstring $(x),$(CONFLICTS_$(y))), \
@@ -38,9 +38,9 @@ $(foreach x,$(RENDERERS),\
 
 all: kine
 
-kine $(kine_OBJS): CPPFLAGS:=$(CPPFLAGS) $(kine_CPPFLAGS)
-kine $(kine_OBJS): CFLAGS:=$(CFLAGS) $(kine_CFLAGS)
-kine: LDLIBS:=$(kine_LDLIBS)
+$(kine_OBJS): override CPPFLAGS+=$(kine_CPPFLAGS)
+$(kine_OBJS): override CFLAGS+=$(kine_CFLAGS)
+kine: override LDLIBS+=$(kine_LDLIBS)
 kine: $(kine_OBJS)
 
 $(kine_OBJS): i386_gen.h kstd.h
@@ -60,10 +60,10 @@ kstd.h: $(K)/k/include/k/kstd.h
 vgapalette.c: $(K)/k/libvga.c
 	sed -nE -e 's/^static/const/g' -e '/libvga_default_palette\[/,/}/ { p }' $< >$@
 
-gen_i386_hdr: CFLAGS:=$(CFLAGS) -m32
-gen_i386_hdr: CPPFLAGS:=$(CPPFLAGS) -D_GNU_SOURCE
-gen_i386_hdr: LDFLAGS:=$(LDFLAGS) -m32
-gen_i386_hdr: LDLIBS:=
+$(gen_i386_hdr_OBJS): override CFLAGS:=$(CFLAGS) -m32
+$(gen_i386_hdr_OBJS): override CPPFLAGS:=$(CPPFLAGS) -D_GNU_SOURCE
+gen_i386_hdr: override LDFLAGS:=-m32
+gen_i386_hdr: override LDLIBS:=
 gen_i386_hdr: $(gen_i386_hdr_OBJS)
 
 i386_gen.h: gen_i386_hdr
