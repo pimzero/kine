@@ -19,8 +19,6 @@
 
 #include "kine.h"
 
-extern const palette_t libvga_default_palette;
-
 struct render_state_sdl {
 	struct render_state base;
 	SDL_Color palette[256];

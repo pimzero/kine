@@ -40,6 +40,8 @@ struct render_state {
 	void (*swap_frontbuffer)(struct render_state*, const framebuffer_t*);
 };
 
+extern const palette_t libvga_default_palette;
+
 struct k_state_t {
 	pthread_mutex_t lock;
 	int video_mode;
