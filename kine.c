@@ -552,20 +552,7 @@ static void *memrchr_inv(const void *s, int c, size_t n) {
 	return (void *)&ptr[n];
 }
 
-__attribute__ ((used))
-static void coredump_handler(siginfo_t *si, void *ucontext) {
-	ucontext_t *ctx = ucontext;
-
-	if (get_cs(ctx) != SEG_REG(CODE, LDT, 3)) {
-		struct sigaction sa = {
-			.sa_handler = SIG_DFL,
-		};
-		if (sigaction(si->si_signo, &sa, NULL) < 0)
-			err(1, "sigaction(SIG_DFL)");
-
-		return;
-	}
-
+static void coredump_write(const struct user_regs_struct_i386 *regs) {
 	const char* last_set_byte = memrchr_inv((void*)config.base, 0, config.limit);
 	size_t filesz = last_set_byte - (const char*)config.base;
 
@@ -637,6 +624,34 @@ static void coredump_handler(siginfo_t *si, void *ucontext) {
 		},
 	};
 
+	memcpy(&coredump.notes.prstatus.desc.pr_reg, regs, sizeof(*regs));
+
+	if (write(fd, &coredump, sizeof(coredump)) != sizeof(coredump))
+		err(1, "write");
+
+	if (lseek(fd, coredump.phdrs[PHDR_LOAD].p_offset, SEEK_SET) < 0)
+		err(1, "lseek");
+
+	if (write(fd, (void*)config.base, filesz) < 0)
+		err(1, "write");
+
+	close(fd);
+}
+
+__attribute__ ((used))
+static void coredump_handler(siginfo_t *si, void *ucontext) {
+	ucontext_t *ctx = ucontext;
+
+	if (get_cs(ctx) != SEG_REG(CODE, LDT, 3)) {
+		struct sigaction sa = {
+			.sa_handler = SIG_DFL,
+		};
+		if (sigaction(si->si_signo, &sa, NULL) < 0)
+			err(1, "sigaction(SIG_DFL)");
+
+		return;
+	}
+
 	struct user_regs_struct_i386 regs = {
 		.ebx = ctx->uc_mcontext.gregs[REG(BX)],
 		.ecx = ctx->uc_mcontext.gregs[REG(CX)],
@@ -650,18 +665,7 @@ static void coredump_handler(siginfo_t *si, void *ucontext) {
 		.eflags = ctx->uc_mcontext.gregs[REG_EFL],
 		.orig_eax = ctx->uc_mcontext.gregs[REG(AX)],
 	};
-	memcpy(&coredump.notes.prstatus.desc.pr_reg, &regs, sizeof(regs));
-
-	if (write(fd, &coredump, sizeof(coredump)) != sizeof(coredump))
-		err(1, "write");
-
-	if (lseek(fd, coredump.phdrs[PHDR_LOAD].p_offset, SEEK_SET) < 0)
-		err(1, "lseek");
-
-	if (write(fd, (void*)config.base, filesz) < 0)
-		err(1, "write");
-
-	close(fd);
+	coredump_write(&regs);
 
 	const char core_dumped_log[] = "Core dumped.\n";
 	write(2, core_dumped_log, sizeof(core_dumped_log) - 1);
