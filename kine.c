@@ -666,15 +666,11 @@ static void coredump_handler(siginfo_t *si, void *ucontext) {
 
 static void setup_sighandlers(void) {
 	const int signals[] = {
-		SIGBUS,
-		SIGFPE,
-		SIGILL,
-		SIGSEGV,
-		SIGTRAP,
+		SIGBUS, SIGFPE, SIGILL, SIGSEGV, SIGTRAP,
 	};
 
 	struct sigaction sa = {
-		.sa_sigaction = GET_SIGACTION(sigsys),
+		.sa_sigaction = GET_SIGACTION(coredump),
 		.sa_flags = SA_SIGINFO|SA_ONSTACK,
 	};
 	for (size_t i = 0; i < ARRSZE(signals); i++)
