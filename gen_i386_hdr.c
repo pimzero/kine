@@ -94,6 +94,9 @@ int main() {
 	       "#define I386_GEN_H\n"
 	       "\n"
 	       "#include <stddef.h>\n"
+	       "#include <stdint.h>\n"
+	       "#include <sys/procfs.h>\n"
+
 	       "\n");
 
 	do_timeval();
