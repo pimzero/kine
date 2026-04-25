@@ -139,19 +139,22 @@ uint32_t getms(void) {
 	return tv.tv_sec * 1000 + tv.tv_usec / 1000;
 }
 
+static void busy_wait_render_state_initialized(void) {
+	while (__atomic_load_n(&k_state.render_state, __ATOMIC_RELAXED) == &render_state_default)
+		;
+}
+
 static void busy_wait_ready_set_palette(struct render_state* r,
 					const palette_t* palette, size_t sze) {
 	(void) r;
-	while (k_state.render_state == &render_state_default)
-		;
+	busy_wait_render_state_initialized();
 	k_state.render_state->set_palette(k_state.render_state, palette, sze);
 }
 
 static void wait_ready_swap_frontbuffer(struct render_state* r,
 					const framebuffer_t* fb) {
 	(void) r;
-	while (k_state.render_state == &render_state_default)
-		;
+	busy_wait_render_state_initialized();
 	k_state.render_state->swap_frontbuffer(k_state.render_state, fb);
 }
 
@@ -159,6 +162,11 @@ static struct render_state render_state_default = {
 	.set_palette = busy_wait_ready_set_palette,
 	.swap_frontbuffer = wait_ready_swap_frontbuffer,
 };
+
+void render_state_set(struct k_state_t* k, struct render_state* render_state) {
+	render_state = render_state ?: &render_state_default;
+	__atomic_store_n(&k->render_state, render_state, __ATOMIC_RELAXED);
+}
 
 static int set_syscall_user_dispatch(void* start, void* end) {
 	return prctl(PR_SET_SYSCALL_USER_DISPATCH, PR_SYS_DISPATCH_ON, start,

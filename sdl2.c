@@ -148,12 +148,14 @@ static void* render_thread_sdl2(struct k_state_t* k) {
 	set_palette(&r.base, &libvga_default_palette,
 		    ARRSZE(libvga_default_palette));
 
-	k->render_state = &r.base;
+	render_state_set(k, &r.base);
 
 	while (!k->quit)
 		update_inputs(k, &r);
 
 	SDL_Quit();
+
+	render_state_set(k, NULL);
 
 	return NULL;
 }

@@ -58,6 +58,8 @@ struct k_state_t {
 	int fds[64];
 };
 
+void render_state_set(struct k_state_t* k, struct render_state* render_state);
+
 struct config_t {
 	int root;
 	int strace, k_on_main_thread;

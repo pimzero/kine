@@ -20,12 +20,12 @@ static void* render_thread_noop(struct k_state_t* k) {
 		.set_palette = set_palette,
 		.swap_frontbuffer = swap_frontbuffer,
 	};
-	k->render_state = &r;
+	render_state_set(k, &r);
 
 	while (!k->quit)
 		sched_yield();
 
-	k->render_state = NULL;
+	render_state_set(k, NULL);
 
 	return NULL;
 }
