@@ -367,6 +367,15 @@ static void k_start(entry_t entry) {
 	__builtin_unreachable();
 }
 
+static void set_sigaction_on_stack(int sig, void (*f)(int, siginfo_t*, void*)) {
+	struct sigaction sa = {
+		.sa_sigaction = f,
+		.sa_flags = SA_SIGINFO|SA_ONSTACK,
+	};
+	if (sigaction(sig, &sa, NULL) < 0)
+		err(1, "sigaction");
+}
+
 static void k_setup_sighandler(void) {
 	stack_t ss = {
 		.ss_sp = malloc(SIGSTKSZ),
@@ -379,12 +388,7 @@ static void k_setup_sighandler(void) {
 	if (sigaltstack(&ss, NULL) < 0)
 		err(1, "sigaltstack");
 
-	struct sigaction sa = {
-		.sa_sigaction = GET_SIGACTION(sigsys),
-		.sa_flags = SA_SIGINFO|SA_ONSTACK,
-	};
-	if (sigaction(SIGSYS, &sa, NULL) < 0)
-		err(1, "sigaction");
+	set_sigaction_on_stack(SIGSYS, GET_SIGACTION(sigsys));
 }
 
 #if __x86_64__
@@ -664,18 +668,11 @@ static void coredump_handler(siginfo_t *si, void *ucontext) {
 	_Exit(1);
 }
 
-static void setup_sighandlers(void) {
-	const int signals[] = {
-		SIGBUS, SIGFPE, SIGILL, SIGSEGV, SIGTRAP,
-	};
+static void setup_coredump_sighandlers(void) {
+	const int sigs[] = { SIGBUS, SIGFPE, SIGILL, SIGSEGV, SIGTRAP, };
 
-	struct sigaction sa = {
-		.sa_sigaction = GET_SIGACTION(coredump),
-		.sa_flags = SA_SIGINFO|SA_ONSTACK,
-	};
-	for (size_t i = 0; i < ARRSZE(signals); i++)
-		if (sigaction(signals[i], &sa, NULL) < 0)
-			err(1, "sigaction");
+	for (size_t i = 0; i < ARRSZE(sigs); i++)
+		set_sigaction_on_stack(sigs[i], GET_SIGACTION(coredump));
 }
 
 extern const struct k_renderer __start_renderers, __stop_renderers;
@@ -825,7 +822,7 @@ int main(int argc, char** argv) {
 			help(argv[0]);
 			exit(1);
 		case 'C':
-			setup_sighandlers();
+			setup_coredump_sighandlers();
 			break;
 		case 'M':
 			k_thread_fn = get_mode(optarg);
