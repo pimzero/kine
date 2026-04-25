@@ -32,9 +32,11 @@ struct ring {
 };
 #define RING_INITIALIZER { .a = -1 }
 
+typedef uint32_t framebuffer_t[320 * 200];
+
 struct render_state {
 	void (*set_palette)(struct render_state*, const uint32_t*, size_t);
-	void (*swap_frontbuffer)(struct render_state*, uint32_t*);
+	void (*swap_frontbuffer)(struct render_state*, const framebuffer_t*);
 };
 
 struct k_state_t {

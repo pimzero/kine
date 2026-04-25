@@ -146,11 +146,12 @@ static void busy_wait_ready_set_palette(struct render_state* r, const uint32_t* 
 	k_state.render_state->set_palette(k_state.render_state, arr, sze);
 }
 
-static void wait_ready_swap_frontbuffer(struct render_state* r, uint32_t* arr) {
+static void wait_ready_swap_frontbuffer(struct render_state* r,
+					const framebuffer_t* fb) {
 	(void) r;
 	while (k_state.render_state == &render_state_default)
 		;
-	k_state.render_state->swap_frontbuffer(k_state.render_state, arr);
+	k_state.render_state->swap_frontbuffer(k_state.render_state, fb);
 }
 
 static struct render_state render_state_default = {

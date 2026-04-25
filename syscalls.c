@@ -154,11 +154,11 @@ static int32_t sys_CLOSE(uint32_t fd) {
 }
 
 static int32_t sys_SWAP_FRONTBUFFER(uint32_t buffer) {
-	uint32_t *arr = mem_from_user(buffer, sizeof(uint32_t) * 320 * 200);
-	if (!arr)
+	const framebuffer_t* fb = mem_from_user(buffer, sizeof(*fb));
+	if (!fb)
 		return -KEINVAL;
 
-	k_state.render_state->swap_frontbuffer(k_state.render_state, arr);
+	k_state.render_state->swap_frontbuffer(k_state.render_state, fb);
 
 	return 0;
 }

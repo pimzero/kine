@@ -10,9 +10,9 @@ static void set_palette(struct render_state* base, const uint32_t* arr,
 	(void) sze;
 }
 
-static void swap_frontbuffer(struct render_state* base, uint32_t* arr) {
+static void swap_frontbuffer(struct render_state* base, const framebuffer_t* fb) {
 	(void) base;
-	(void) arr;
+	(void) fb;
 }
 
 static void* render_thread_noop(struct k_state_t* k) {

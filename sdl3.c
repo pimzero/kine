@@ -26,7 +26,7 @@ struct render_state_sdl {
 	SDL_Color palette[256];
 	SDL_Palette* sdl_palette;
 	SDL_Renderer* renderer;
-	uint32_t framebuffer[320 * 200];
+	framebuffer_t framebuffer;
 	uint32_t sdl_ev_swap_frontbuffer;
 };
 
@@ -123,10 +123,10 @@ static void set_palette(struct render_state* base, const uint32_t* arr,
 	}
 }
 
-static void swap_frontbuffer(struct render_state* base, uint32_t* arr) {
+static void swap_frontbuffer(struct render_state* base, const framebuffer_t* fb) {
 	struct render_state_sdl* r =
 		container_of(base, struct render_state_sdl, base);
-	memcpy(&r->framebuffer, arr, sizeof(r->framebuffer));
+	memcpy(&r->framebuffer, fb, sizeof(r->framebuffer));
 	if (!SDL_PushEvent(&(SDL_Event){ .type = r->sdl_ev_swap_frontbuffer }))
 		warnx("SDL_PushEvent: %s", SDL_GetError());
 }
