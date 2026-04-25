@@ -188,6 +188,10 @@ typedef void* (*renderer_t)(struct k_state_t*);
 DEFINE_MODULE_CLASS(renderer, const renderer_t);
 #define DEFINE_RENDERER(Name, Value) DEFINE_MODULE(renderer, Name, Value)
 
+typedef void* (*k_thread_t)(void* entry);
+DEFINE_MODULE_CLASS(mode, const k_thread_t);
+#define DEFINE_MODE(Name, Value) DEFINE_MODULE(mode, Name, Value)
+
 #define FLAG_KEY_RELEASED 0x80
 
 #endif

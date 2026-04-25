@@ -203,7 +203,7 @@ static void setup_coredump_sighandlers(void) {
 		set_sigaction_on_stack(sigs[i], GET_SIGACTION(coredump));
 }
 
-int k_thread_syscall_user_dispatch_ex(entry_t entry, int probe) {
+static int k_thread_syscall_user_dispatch_ex(entry_t entry, int probe) {
 	if (set_syscall_user_dispatch((char*)config.base + config.limit,
 				      (void*)~(0x1ULL<<63)) < 0) {
 		if (probe)
@@ -225,7 +225,9 @@ int k_thread_syscall_user_dispatch_ex(entry_t entry, int probe) {
 	k_start(entry);
 }
 
-void* k_thread_syscall_user_dispatch(void* entry) {
+static void* k_thread_syscall_user_dispatch(void* entry) {
 	k_thread_syscall_user_dispatch_ex(entry, 0);
 	errx(1, "k_thread_syscall_user_dispatch_ex");
 }
+
+DEFINE_MODE(syscall_user_dispatch, k_thread_syscall_user_dispatch);

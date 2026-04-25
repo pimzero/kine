@@ -35,7 +35,7 @@ static void ptrace_interrupted_reraise(void) {
 	errx(1, "ptrace_interrupted_reraise");
 }
 
-void* k_thread_ptrace(void* entry) {
+static void* k_thread_ptrace(void* entry) {
 	k_prepare();
 
 	pid_t pid = fork();
@@ -131,3 +131,5 @@ void* k_thread_ptrace(void* entry) {
 	}
 	err(1, "waitpid");
 }
+
+DEFINE_MODE(ptrace, k_thread_ptrace)

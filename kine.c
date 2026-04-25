@@ -377,38 +377,6 @@ static uint32_t parse_u32_or_die(const char* str) {
 	return r;
 }
 
-typedef void* k_thread_t(void* entry);
-
-void* k_thread_syscall_user_dispatch(void* entry);
-void* k_thread_ptrace(void* entry);
-
-static void* k_thread_auto(void* entry) {
-	extern int k_thread_syscall_user_dispatch_ex(entry_t entry, int probe);
-
-	if (k_thread_syscall_user_dispatch_ex(entry, 1) < 0)
-		return k_thread_ptrace(entry);
-	return NULL;
-}
-
-static struct {
-	const char* name;
-	k_thread_t* fn;
-} modes[] = {
-#define MODE(X) { .name = #X, .fn = k_thread_##X, }
-	MODE(auto),
-	MODE(syscall_user_dispatch),
-	MODE(ptrace),
-#undef MODE
-};
-
-static k_thread_t* get_mode(const char* name) {
-	for (size_t i = 0; i < ARRSZE(modes); i++)
-		if (!strcmp(name, modes[i].name))
-			return modes[i].fn;
-
-	errx(1, "Unsupported mode \"%s\"", name);
-}
-
 static void help(const char* argv0) {
 	fprintf(stderr,
 	"Usage: %s [arguments] /path/to/rom\n"
@@ -421,12 +389,12 @@ static void help(const char* argv0) {
 	"  -b addr    \tAddress to load the rom (default: %#x)\n"
 	"  -l num     \tSize (limit) of the rom's segment (in pages) (default: %#x)\n"
 	"  -T         \tRuns k on the main thread\n"
-	"  -M mode    \tSelect emulation mode (one of [auto, syscall_user_dispatch,\n"
-	"             \tptrace], default: auto)\n"
+	"  -M mode    \tSelect emulation mode (one of [%s], default: %s)\n"
 	"  -C         \tSave rom coredump\n"
 	"  -r renderer\tSelects the renderer (one of: [%s], default: %s)\n",
-	argv0, USER_ESP, USER_ESP, BASE, LIMIT, list_modules(&module_renderer),
-	module_renderer.names[0]);
+	argv0, USER_ESP, USER_ESP, BASE, LIMIT,
+	list_modules(&module_mode), module_mode.names[0],
+	list_modules(&module_renderer), module_renderer.names[0]);
 }
 
 static void* render_thread(void *data) {
@@ -446,7 +414,7 @@ int main(int argc, char** argv) {
 	int opt;
 
 	renderer_t renderer = *module_renderer_get(0);
-	k_thread_t* k_thread_fn = modes[0].fn;
+	k_thread_t k_thread_fn = *module_mode_get(0);
 
 	while ((opt = getopt(argc, argv, "p:sS:H:b:hl:Tr:CM:")) != -1) {
 		switch (opt) {
@@ -487,9 +455,16 @@ int main(int argc, char** argv) {
 		case 'C':
 			config.coredump = 1;
 			break;
-		case 'M':
-			k_thread_fn = get_mode(optarg);
+		case 'M': {
+			const k_thread_t* found = module_mode_find(optarg);
+			if (!found) {
+				warnx("Invalid mode \"%s\"", optarg);
+				help(argv[0]);
+				exit(1);
+			}
+			k_thread_fn = *found;
 			break;
+		}
 		default:
 			fprintf(stderr, "\n");
 			/* fallthrough */
