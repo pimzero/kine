@@ -37,6 +37,24 @@ static void* get_user(uint32_t ptr) {
 	return (void*)(ptr + config.base);
 }
 
+static char* str_from_user(uint32_t ptr) {
+	char* str = get_user(ptr);
+	if (!str)
+		return NULL;
+
+	if (!memchr(str, 0, config.limit - ptr))
+		return NULL;
+
+	return str;
+}
+
+static void* mem_from_user(uint32_t ptr, size_t size) {
+	if (ptr + size > config.limit)
+		return NULL;
+
+	return get_user(ptr);
+}
+
 static int32_t errno2k(int32_t r)
 {
 	if (r >= 0)
@@ -66,7 +84,7 @@ static int32_t errno2k(int32_t r)
 	})
 
 static int32_t sys_WRITE(uint32_t buf, uint32_t len) {
-	void* buf_ptr = get_user(buf);
+	void* buf_ptr = mem_from_user(buf, len);
 	if (!buf_ptr)
 		return -KEINVAL;
 
@@ -104,7 +122,7 @@ static int32_t sys_OPEN(uint32_t pathname, int flags) {
 	if (!fd_orig)
 		return -KENOMEM;
 
-	char* pathname_ptr = get_user(pathname);
+	char* pathname_ptr = str_from_user(pathname);
 	if (!pathname_ptr)
 		return -KEINVAL;
 
@@ -136,7 +154,7 @@ static int32_t sys_CLOSE(uint32_t fd) {
 }
 
 static int32_t sys_SWAP_FRONTBUFFER(uint32_t buffer) {
-	uint32_t *arr = get_user(buffer);
+	uint32_t *arr = mem_from_user(buffer, sizeof(uint32_t) * 320 * 200);
 	if (!arr)
 		return -KEINVAL;
 
@@ -146,7 +164,7 @@ static int32_t sys_SWAP_FRONTBUFFER(uint32_t buffer) {
 }
 
 static int32_t sys_READ(uint32_t fd, uint32_t buf, uint32_t count) {
-	void* buf_ptr = get_user(buf);
+	void* buf_ptr = mem_from_user(buf, count);
 	if (!buf_ptr)
 		return -KEINVAL;
 
@@ -194,7 +212,7 @@ static int32_t sys_GETKEY(void) {
 }
 
 static uint32_t sys_SETPALETTE(uint32_t palette, uint32_t sze) {
-	uint32_t* arr = get_user(palette);
+	uint32_t* arr = mem_from_user(palette, sze * sizeof(*arr));
 	if (!arr)
 		return -KEINVAL;
 
@@ -206,7 +224,7 @@ static uint32_t sys_SETPALETTE(uint32_t palette, uint32_t sze) {
 }
 
 static int32_t sys_READKEY(uint32_t uaddr) {
-	struct key_event *ev = get_user(uaddr);
+	struct key_event* ev = mem_from_user(uaddr, sizeof(*ev));
 	if (!ev)
 		return -KEINVAL;
 
@@ -248,7 +266,7 @@ static const struct {
 };
 
 static void print_string_arg(FILE *f, uint32_t arg) {
-	const char *s = get_user(arg);
+	const char *s = str_from_user(arg);
 	if (s)
 		fprintf(f, "\"%s\"", s);
 	else
