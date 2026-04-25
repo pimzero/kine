@@ -154,11 +154,13 @@ static int32_t sys_READ(uint32_t fd, uint32_t buf, uint32_t count) {
 }
 
 static uint32_t sys_SBRK(int32_t inc) {
-	if (inc < 0)
-		inc = 0;
+	int32_t new_brk = (int32_t)k_state.brk + inc;
+
+	if (new_brk < 0 || new_brk >= (int32_t)config.limit)
+		return (uint32_t)-KENOMEM;
 
 	uint32_t out = k_state.brk;
-	k_state.brk += inc;
+	k_state.brk = new_brk;
 
 	return out;
 }
