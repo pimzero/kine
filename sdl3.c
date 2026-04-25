@@ -19,6 +19,16 @@
 
 #include "kine.h"
 
+#ifdef USE_DL_LAZY
+#include "dl_lazy.h"
+
+static void *sdl3_handle;
+
+#define SDL(X) DL_LAZY(SDL_##X, sdl3_handle)
+#else
+#define SDL(X) SDL_##X
+#endif
+
 struct render_state_sdl {
 	struct render_state base;
 	SDL_Color palette[256];
@@ -29,16 +39,16 @@ struct render_state_sdl {
 };
 
 static SDL_Renderer* init_window(void) {
-	if (!SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1"))
-		errx(1, "SDL_SetHint(NO_SIGNAL_HANDLERS): %s", SDL_GetError());
+	if (!SDL(SetHint)(SDL_HINT_NO_SIGNAL_HANDLERS, "1"))
+		errx(1, "SDL_SetHint(NO_SIGNAL_HANDLERS): %s", SDL(GetError)());
 
-	if (!SDL_Init(SDL_INIT_VIDEO))
-		errx(1, "SDL_Init: %s", SDL_GetError());
+	if (!SDL(Init)(SDL_INIT_VIDEO))
+		errx(1, "SDL_Init: %s", SDL(GetError)());
 
 	SDL_Window* window = NULL;
 	SDL_Renderer* renderer = NULL;
-	if (!SDL_CreateWindowAndRenderer("kine", 640, 400, 0, &window, &renderer))
-		errx(1, "SDL_CreateWindowAndRenderer: %s", SDL_GetError());
+	if (!SDL(CreateWindowAndRenderer)("kine", 640, 400, 0, &window, &renderer))
+		errx(1, "SDL_CreateWindowAndRenderer: %s", SDL(GetError)());
 
 	return renderer;
 }
@@ -59,34 +69,34 @@ static int32_t scancode(SDL_Scancode orig) {
 
 static void update_renderer(struct render_state_sdl* r) {
 	SDL_Surface* surface =
-		SDL_CreateSurfaceFrom(
+		SDL(CreateSurfaceFrom)(
 			320, 200,
-			SDL_GetPixelFormatForMasks(8, 0, 0, 0, 0),
+			SDL(GetPixelFormatForMasks)(8, 0, 0, 0, 0),
 			r->framebuffer, 320);
 	if (!surface)
-		errx(1, "SDL_CreateSurfaceFrom: %s", SDL_GetError());
+		errx(1, "SDL_CreateSurfaceFrom: %s", SDL(GetError)());
 
-	if (!SDL_SetPaletteColors(r->sdl_palette, r->palette, 0, 256))
-		errx(1, "SDL_SetPaletteColors: %s", SDL_GetError());
+	if (!SDL(SetPaletteColors)(r->sdl_palette, r->palette, 0, 256))
+		errx(1, "SDL_SetPaletteColors: %s", SDL(GetError)());
 
-	if (!SDL_SetSurfacePalette(surface, r->sdl_palette))
-		errx(1, "SDL_SetSurfacePalette: %s", SDL_GetError());
+	if (!SDL(SetSurfacePalette)(surface, r->sdl_palette))
+		errx(1, "SDL_SetSurfacePalette: %s", SDL(GetError)());
 
 	SDL_Texture* texture =
-		SDL_CreateTextureFromSurface(r->renderer, surface);
+		SDL(CreateTextureFromSurface)(r->renderer, surface);
 	if (!texture)
-		errx(1, "SDL_CreateTextureFromSurface: %s", SDL_GetError());
-	SDL_DestroySurface(surface);
-	SDL_RenderTexture(r->renderer, texture, 0, 0);
-	SDL_DestroyTexture(texture);
-	SDL_RenderPresent(r->renderer);
+		errx(1, "SDL_CreateTextureFromSurface: %s", SDL(GetError)());
+	SDL(DestroySurface)(surface);
+	SDL(RenderTexture)(r->renderer, texture, 0, 0);
+	SDL(DestroyTexture)(texture);
+	SDL(RenderPresent)(r->renderer);
 }
 
 static void update_inputs(struct k_state_t* k, struct render_state_sdl* r) {
 	SDL_Event event = {};
 
-	if (!SDL_WaitEvent(&event))
-		warnx("SDL_WaitEvent: %s", SDL_GetError());
+	if (!SDL(WaitEvent)(&event))
+		warnx("SDL_WaitEvent: %s", SDL(GetError)());
 
 	k_lock(k);
 	if (event.type == SDL_EVENT_QUIT) {
@@ -122,23 +132,28 @@ static void swap_frontbuffer(struct render_state* base, const framebuffer_t* fb)
 	struct render_state_sdl* r =
 		container_of(base, struct render_state_sdl, base);
 	memcpy(&r->framebuffer, fb, sizeof(r->framebuffer));
-	if (!SDL_PushEvent(&(SDL_Event){ .type = r->sdl_ev_swap_frontbuffer }))
-		warnx("SDL_PushEvent: %s", SDL_GetError());
+	if (!SDL(PushEvent)(&(SDL_Event){ .type = r->sdl_ev_swap_frontbuffer }))
+		warnx("SDL_PushEvent: %s", SDL(GetError)());
 }
 
 static void* render_thread_sdl3(struct k_state_t* k) {
+#if USE_DL_LAZY
+	if ((sdl3_handle = dlopen("libSDL3.so", RTLD_LAZY|RTLD_LOCAL)) == NULL)
+		errx(1, "dlopen: %s", dlerror());
+#endif
+
 	struct render_state_sdl r = {
 		.base = {
 			.set_palette = set_palette,
 			.swap_frontbuffer = swap_frontbuffer,
 		},
-		.sdl_palette = SDL_CreatePalette(256),
+		.sdl_palette = SDL(CreatePalette)(256),
 		.renderer = init_window(),
 	};
 	if (!r.sdl_palette)
-		errx(1, "SDL_CreatePalette: %s", SDL_GetError());
+		errx(1, "SDL_CreatePalette: %s", SDL(GetError)());
 
-	if (!(r.sdl_ev_swap_frontbuffer = SDL_RegisterEvents(1)))
+	if (!(r.sdl_ev_swap_frontbuffer = SDL(RegisterEvents)(1)))
 		errx(1, "SDL_RegisterEvents");
 
 	set_palette(&r.base, &libvga_default_palette,

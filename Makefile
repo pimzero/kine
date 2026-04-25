@@ -1,5 +1,5 @@
 # RENDERERS ?= sdl2
-RENDERERS ?= sdl3
+RENDERERS ?= sdl3 sdl2_dl
 
 K=./third_party/k
 
