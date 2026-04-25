@@ -139,11 +139,12 @@ uint32_t getms(void) {
 	return tv.tv_sec * 1000 + tv.tv_usec / 1000;
 }
 
-static void busy_wait_ready_set_palette(struct render_state* r, const uint32_t* arr, size_t sze) {
+static void busy_wait_ready_set_palette(struct render_state* r,
+					const palette_t* palette, size_t sze) {
 	(void) r;
 	while (k_state.render_state == &render_state_default)
 		;
-	k_state.render_state->set_palette(k_state.render_state, arr, sze);
+	k_state.render_state->set_palette(k_state.render_state, palette, sze);
 }
 
 static void wait_ready_swap_frontbuffer(struct render_state* r,

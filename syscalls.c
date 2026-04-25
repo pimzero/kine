@@ -212,13 +212,16 @@ static int32_t sys_GETKEY(void) {
 }
 
 static uint32_t sys_SETPALETTE(uint32_t palette, uint32_t sze) {
-	uint32_t* arr = mem_from_user(palette, sze * sizeof(*arr));
-	if (!arr)
+	const palette_t* p = mem_from_user(palette, sizeof(*p));
+	if (!p)
 		return -KEINVAL;
+
+	if (sze > ARRSZE(*p))
+		sze = ARRSZE(*p);
 
 	K_LOCK_SCOPPED(lock, &k_state);
 
-	k_state.render_state->set_palette(k_state.render_state, arr, sze);
+	k_state.render_state->set_palette(k_state.render_state, p, sze);
 
 	return 0;
 }

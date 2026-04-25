@@ -3,10 +3,10 @@
 
 #include "kine.h"
 
-static void set_palette(struct render_state* base, const uint32_t* arr,
+static void set_palette(struct render_state* base, const palette_t* palette,
 			size_t sze) {
 	(void) base;
-	(void) arr;
+	(void) palette;
 	(void) sze;
 }
 

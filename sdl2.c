@@ -19,7 +19,7 @@
 
 #include "kine.h"
 
-extern const unsigned int libvga_default_palette[256];
+extern const palette_t libvga_default_palette;
 
 struct render_state_sdl {
 	struct render_state base;
@@ -111,18 +111,15 @@ static void update_inputs(struct k_state_t* k, struct render_state_sdl* r) {
 		update_renderer(r);
 }
 
-static void set_palette(struct render_state* base, const uint32_t* arr,
+static void set_palette(struct render_state* base, const palette_t* palette,
 			size_t sze) {
 	struct render_state_sdl* r =
 		container_of(base, struct render_state_sdl, base);
 
-	if (sze > ARRSZE(r->palette))
-		sze = ARRSZE(r->palette);
-
 	for (size_t i = 0; i < sze; i++) {
-		r->palette[i].b = (arr[i] & 0xff) >> 0;
-		r->palette[i].r = (arr[i] & 0xff0000) >> 16;
-		r->palette[i].g = (arr[i] & 0xff00) >> 8;
+		r->palette[i].b = ((*palette)[i] & 0xff) >> 0;
+		r->palette[i].r = ((*palette)[i] & 0xff0000) >> 16;
+		r->palette[i].g = ((*palette)[i] & 0xff00) >> 8;
 	}
 }
 
@@ -150,7 +147,7 @@ static void* render_thread_sdl2(struct k_state_t* k) {
 	if (r.sdl_ev_swap_frontbuffer == (uint32_t)-1)
 		errx(1, "SDL_RegisterEvents");
 
-	set_palette(&r.base, libvga_default_palette,
+	set_palette(&r.base, &libvga_default_palette,
 		    ARRSZE(libvga_default_palette));
 
 	k->render_state = &r.base;
