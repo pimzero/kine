@@ -52,6 +52,13 @@ i386_gen.h: gen_i386_hdr
 
 clean:
 	$(RM) $(BIN) $(OBJS) $(DEPS) $(GEN)
+	make -f testrom.mk clean K="$(K)"
+
+testrom: FORCE
+	make -f testrom.mk testrom K="$(K)"
+
+tests: testrom FORCE
+	./testcases.sh ./$(BIN) testrom
 
 -include $(DEPS)
 
