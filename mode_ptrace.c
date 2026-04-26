@@ -84,11 +84,10 @@ static void* k_thread_ptrace(void* entry) {
 #define eorig_ax orig_eax
 #endif
 			UREG(ax) = syscall_dispatch(UREG(orig_ax),
-						    (syscall_args_t) {
-							UREG(bx),
-							UREG(cx),
-							UREG(dx),
-						    });
+						    UREG(bx),
+						    UREG(cx),
+						    UREG(dx)
+					);
 
 			if (ptrace(PTRACE_SETREGS, pid, NULL, &regs) < 0)
 				err(1, "ptrace(SETREGS)");

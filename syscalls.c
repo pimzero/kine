@@ -19,6 +19,7 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <linux/openat2.h>
+#include <printf.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -241,8 +242,6 @@ static int32_t sys_READKEY(uint32_t uaddr) {
 	return 0;
 }
 
-#define FMT_STRING ((void *)1)
-
 typedef union {
 	int32_t (*v  )(void);
 	int32_t (*u  )(uint32_t);
@@ -254,56 +253,76 @@ typedef union {
 
 static const struct {
 	syscall_t f;
-	const char *name;
-	const char *fmt[ARRSZE((syscall_args_t){})];
+	const char* name;
+	const char* fmt;
 } syscalls[] = {
-#define SYS(T, Name, ...) [KSYSCALL_##Name] = { .f.T = sys_##Name, .name = #Name, .fmt = { __VA_ARGS__ }, }
-	SYS(uu,  WRITE, "%#x", "%u"),
+#define SYS(T, Name, Fmt) [KSYSCALL_##Name] = { .f.T = sys_##Name, .name = #Name, .fmt = Fmt, }
+	SYS(uu,  WRITE, "%S, %u"),
 	SYS(s,   SBRK, "%d"),
-	SYS(v,   GETKEY),
-	SYS(v,   GETTICK),
-	SYS(uu,  OPEN, FMT_STRING),
-	SYS(uuu, READ, "%d", "%#x", "%u"),
-	SYS(uss, SEEK, "%u", "%d", "%d"),
+	SYS(v,   GETKEY, ""),
+	SYS(v,   GETTICK, ""),
+	SYS(uu,  OPEN, "%S, %u"),
+	SYS(uuu, READ, "%d, %#x, %u"),
+	SYS(uss, SEEK, "%u, %d, %d"),
 	SYS(u,   CLOSE, "%d"),
-	SYS(s,   SETVIDEO, "%d"),
+	SYS(s,   SETVIDEO,"%d"),
 	SYS(u,   SWAP_FRONTBUFFER, "%#x"),
 	/* SYS(PLAYSOUND), // not implemented. */
-	SYS(uu,  SETPALETTE, "%#x", "%u"),
+	SYS(uu,  SETPALETTE, "%#x, %u"),
 	/* SYS(GETMOUSE), // not implemented. */
 	SYS(u,   READKEY, "%#x"),
 #undef SYS
 };
 
-static void print_string_arg(FILE *f, uint32_t arg) {
-	const char *s = str_from_user(arg);
+static int print_string_arg(FILE* f, const struct printf_info* info,
+			    const void* const* args) {
+	(void) info;
+	uint32_t arg = *(uint32_t*)(args[0]);
+	const char* s = str_from_user(arg);
 	if (s)
-		fprintf(f, "\"%s\"", s);
+		return fprintf(f, "\"%s\"", s);
 	else
-		fprintf(f, "%#x", arg);
+		return fprintf(f, "%#x", arg);
 }
 
-int32_t syscall_dispatch(uint32_t nr, const syscall_args_t args) {
+__attribute((constructor))
+static void syscalls_init_strace(void) {
+	if (register_printf_specifier('S', print_string_arg, NULL) < 0)
+		err(1, "register_printf_specifier");
+}
+
+static void syscall_trace(uint32_t nr, uint32_t arg1, uint32_t arg2,
+			  uint32_t arg3, int32_t ret) {
+	fprintf(stderr, "%s(", syscalls[nr].name);
+	fprintf(stderr, syscalls[nr].fmt, arg1, arg2, arg3);
+
+	static const char* errnos[] = {
+#define X(X) [K##X] = #X
+		X(ENOMEM),
+		X(ENOENT),
+		X(EIO),
+		X(EINVAL),
+		X(ENOSYS),
+		X(EBADF),
+		X(EAGAIN),
+#undef X
+	};
+	if (-ret > 0 && -ret < (int32_t)ARRSZE(errnos) && errnos[-ret])
+		fprintf(stderr, ") = -%s\n", errnos[-ret]);
+	else
+		fprintf(stderr, ") = %d\n", ret);
+}
+
+int32_t syscall_dispatch(uint32_t nr, uint32_t arg1, uint32_t arg2, uint32_t arg3) {
 	if (nr > ARRSZE(syscalls) || !syscalls[nr].f.uuu) {
 		fprintf(stderr, "unsupported syscall: %d\n", nr);
 		return -KENOSYS;
 	}
 
-	int32_t ret = syscalls[nr].f.uuu(args[0], args[1], args[2]);
+	int32_t ret = syscalls[nr].f.uuu(arg1, arg2, arg3);
 
-	if (config.strace) {
-		fprintf(stderr, "%s(", syscalls[nr].name);
-		for (size_t i = 0; i < ARRSZE(syscalls[nr].fmt) && syscalls[nr].fmt[i]; i++) {
-			if (i)
-				fprintf(stderr, ", ");
-			if (syscalls[nr].fmt[i] == FMT_STRING)
-				print_string_arg(stderr, args[i]);
-			else
-				fprintf(stderr, syscalls[nr].fmt[i], args[i]);
-		}
-
-		fprintf(stderr, ") = %d\n", ret);
-	}
+	if (config.strace)
+		syscall_trace(nr, arg1, arg2, arg3, ret);
 
 	return ret;
 }

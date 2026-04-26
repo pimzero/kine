@@ -148,14 +148,12 @@ static void sigsys_handler(siginfo_t* siginfo, struct ucontext_t* ctx) {
 #else
 #define REG(X) REG_E##X
 #endif
-	syscall_args_t args = {
+	ctx->uc_mcontext.gregs[REG(AX)] =
+		syscall_dispatch(siginfo->si_syscall,
 		ctx->uc_mcontext.gregs[REG(BX)],
 		ctx->uc_mcontext.gregs[REG(CX)],
-		ctx->uc_mcontext.gregs[REG(DX)],
-	};
-
-	ctx->uc_mcontext.gregs[REG(AX)] =
-		syscall_dispatch(siginfo->si_syscall, args);
+		ctx->uc_mcontext.gregs[REG(DX)]
+	);
 }
 
 static int set_syscall_user_dispatch(void* start, void* end) {
