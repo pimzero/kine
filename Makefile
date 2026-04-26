@@ -44,7 +44,8 @@ $(kine_OBJS): override CFLAGS+=$(kine_CFLAGS)
 kine: override LDLIBS+=$(kine_LDLIBS)
 kine: $(kine_OBJS)
 
-$(kine_OBJS): i386_gen.h kstd.h
+kine.o syscalls.o: kstd.h
+coredump.o mode_syscall_user_dispatch.o mode_ptrace.o: i386_gen.h
 
 # Files to generate from github.com/lse/k
 GEN= \
