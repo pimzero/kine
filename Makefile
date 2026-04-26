@@ -14,6 +14,7 @@ kine_OBJS= \
 	   kine.o \
 	   syscalls.o \
 	   vgapalette.o \
+	   coredump.o \
 	   mode_auto.o \
 	   mode_syscall_user_dispatch.o \
 	   mode_ptrace.o \

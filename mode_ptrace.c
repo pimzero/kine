@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "kine.h"
+#include "coredump.h"
 
 static int ptrace_interrupted;
 

@@ -106,17 +106,6 @@ void k_start(entry_t entry);
 #define SEG_REG(Segment, Table, Rpl) \
 	((SEGMENT_##Segment << 3) | SEGMENT_##Table | SEGMENT_RPL##Rpl)
 
-#if __x86_64__
-#include "i386_gen.h"
-#else
-#include <sys/procfs.h>
-#include <sys/user.h>
-#define elf_prstatus_i386 elf_prstatus
-#define user_regs_struct_i386 user_regs_struct
-#endif
-
-void coredump_write(const struct user_regs_struct_i386 *regs);
-
 static inline int ring_push(struct ring* rb, uint8_t c) {
 	if ((rb->z + 1) % ARRSZE(rb->buf) == rb->a)
 		return -1;

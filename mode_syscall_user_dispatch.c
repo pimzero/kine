@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "kine.h"
+#include "coredump.h"
 
 #ifndef PR_SET_SYSCALL_USER_DISPATCH
 #define PR_SET_SYSCALL_USER_DISPATCH 59
