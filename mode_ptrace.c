@@ -36,6 +36,50 @@ static void ptrace_interrupted_reraise(void) {
 	errx(1, "ptrace_interrupted_reraise");
 }
 
+#ifdef __x86_64__
+#define REG(X) regs.r##X
+#define rorig_ax orig_rax
+#else
+#define REG(X) regs.e##X
+#define eorig_ax orig_eax
+#endif
+
+static void handle_syscall(pid_t pid) {
+	struct user_regs_struct regs = {};
+	if (ptrace(PTRACE_GETREGS, pid, NULL, &regs) < 0)
+		err(1, "ptrace(GETREGS)");
+
+	REG(ax) = syscall_dispatch(REG(orig_ax), REG(bx), REG(cx), REG(dx));
+
+	if (ptrace(PTRACE_SETREGS, pid, NULL, &regs) < 0)
+		err(1, "ptrace(SETREGS)");
+}
+
+static void handle_exception(pid_t pid, int sig) {
+	if (config.coredump) {
+		struct user_regs_struct regs = {};
+		if (ptrace(PTRACE_GETREGS, pid, NULL, &regs) < 0)
+			err(1, "ptrace(GETREGS)");
+
+		coredump_write(&(struct user_regs_struct_i386) {
+				.ebx = REG(bx),
+				.ecx = REG(cx),
+				.edx = REG(dx),
+				.esi = REG(si),
+				.edi = REG(di),
+				.ebp = REG(bp),
+				.eax = REG(ax),
+				.eip = REG(ip),
+				.esp = REG(sp),
+				.eflags = regs.eflags,
+				.orig_eax = REG(orig_ax),
+				});
+	}
+	fprintf(stderr, "Fatal signal %d\n", sig);
+	if (kill(pid, 9) < 0)
+		err(1, "kill");
+}
+
 static void* k_thread_ptrace(void* entry) {
 	k_prepare();
 
@@ -66,64 +110,21 @@ static void* k_thread_ptrace(void* entry) {
 		}
 
 		if (WSTOPSIG(wstatus) == SIGSTOP) {
-			/* 0x80 not set: We are not handling a syscall. */
-
 			if (ptrace(PTRACE_SETOPTIONS, pid, NULL,
 				   PTRACE_O_TRACESYSGOOD) < 0)
 				err(1, "ptrace(SETOPTIONS)");
 		} else if (WSTOPSIG(wstatus) == (SIGTRAP|0x80)) {
-			struct user_regs_struct regs = {};
-			if (ptrace(PTRACE_GETREGS, pid, NULL, &regs) < 0)
-				err(1, "ptrace(GETREGS)");
-
-#ifdef __x86_64__
-#define UREG(X) regs.r##X
-#define rorig_ax orig_rax
-#else
-#define UREG(X) regs.e##X
-#define eorig_ax orig_eax
-#endif
-			UREG(ax) = syscall_dispatch(UREG(orig_ax),
-						    UREG(bx),
-						    UREG(cx),
-						    UREG(dx)
-					);
-
-			if (ptrace(PTRACE_SETREGS, pid, NULL, &regs) < 0)
-				err(1, "ptrace(SETREGS)");
+			handle_syscall(pid);
 		} else if (WSTOPSIG(wstatus) == SIGBUS ||
 			   WSTOPSIG(wstatus) == SIGFPE ||
 			   WSTOPSIG(wstatus) == SIGILL ||
 			   WSTOPSIG(wstatus) == SIGSEGV ||
 			   WSTOPSIG(wstatus) == SIGTRAP) {
-
-			if (config.coredump) {
-				struct user_regs_struct regs = {};
-				if (ptrace(PTRACE_GETREGS, pid, NULL, &regs) < 0)
-					err(1, "ptrace(GETREGS)");
-
-				coredump_write(&(struct user_regs_struct_i386) {
-						.ebx = UREG(bx),
-						.ecx = UREG(cx),
-						.edx = UREG(dx),
-						.esi = UREG(si),
-						.edi = UREG(di),
-						.ebp = UREG(bp),
-						.eax = UREG(ax),
-						.eip = UREG(ip),
-						.esp = UREG(sp),
-						.eflags = regs.eflags,
-						.orig_eax = UREG(orig_ax),
-						});
-			} else {
-				fprintf(stderr, "Fatal signal %d\n",
-					WSTOPSIG(wstatus));
-			}
-			if (kill(pid, 9) < 0)
-				err(1, "kill");
+			handle_exception(pid, WSTOPSIG(wstatus));
 			continue;
 		} else {
-			errx(1, "waitpid: unsupported signal");
+			errx(1, "waitpid: unsupported signal %d",
+			     WSTOPSIG(wstatus));
 		}
 
 		if (ptrace(PTRACE_SYSEMU, pid, 0, 0) < 0)
