@@ -22,9 +22,7 @@
 #ifdef USE_DL_LAZY
 #include "dl_lazy.h"
 
-static void *sdl2_handle;
-
-#define SDL(X) DL_LAZY(SDL_##X, sdl2_handle)
+#define SDL(X) DL_LAZY("libSDL2.so", SDL_##X)
 #else
 #define SDL(X) SDL_##X
 #endif
@@ -140,11 +138,6 @@ static void swap_frontbuffer(struct render_state* base, const framebuffer_t* fb)
 }
 
 static void* render_thread_sdl2(struct k_state_t* k) {
-#if USE_DL_LAZY
-	if ((sdl2_handle = dlopen("libSDL2.so", RTLD_LAZY|RTLD_LOCAL)) == NULL)
-		errx(1, "dlopen: %s", dlerror());
-#endif
-
 	struct render_state_sdl r = {
 		.base = {
 			.set_palette = set_palette,
