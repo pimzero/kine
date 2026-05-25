@@ -15,6 +15,9 @@
  */
 
 #include <err.h>
+#include <errno.h>
+#include <limits.h>
+#include <stdlib.h>
 #include "SDL3/SDL.h"
 
 #include "kine.h"
@@ -36,6 +39,30 @@ struct render_state_sdl {
 	uint32_t sdl_ev_swap_frontbuffer;
 };
 
+static SDL_ScaleMode str_to_scalemode(const char *str)
+{
+	char *end;
+	errno = 0;
+	unsigned long v = strtoul(str, &end, 0);
+	if (!errno && (*end == '\0'))
+		return v;
+
+	const struct {
+		const char *name;
+		SDL_ScaleMode value;
+	} scalemodes[] = {
+		{ "linear", SDL_SCALEMODE_LINEAR },
+		{ "nearest", SDL_SCALEMODE_NEAREST },
+		{ "pixelart", SDL_SCALEMODE_PIXELART },
+	};
+
+	for (size_t i = 0; i < ARRSZE(scalemodes); i++)
+		if (!strcmp(str, scalemodes[i].name))
+			return scalemodes[i].value;
+
+	errx(1, "Unsupported scalemode \"%s\"", str);
+}
+
 static SDL_Renderer *init_window(void)
 {
 	if (!SDL(SetHint)(SDL_HINT_NO_SIGNAL_HANDLERS, "1"))
@@ -49,6 +76,14 @@ static SDL_Renderer *init_window(void)
 	if (!SDL(CreateWindowAndRenderer)("kine", 640, 400, 0, &window,
 					  &renderer))
 		errx(1, "SDL_CreateWindowAndRenderer: %s", SDL(GetError)());
+
+	const char *scalemode_str = getenv("SDL_RENDER_SCALE_QUALITY");
+	if (scalemode_str) {
+		SDL_ScaleMode scalemode = str_to_scalemode(scalemode_str);
+		if (!SDL(SetDefaultTextureScaleMode)(renderer, scalemode))
+			errx(1, "SDL_SetDefaultTextureScaleMode: %s",
+			     SDL(GetError)());
+	}
 
 	return renderer;
 }
