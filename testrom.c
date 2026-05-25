@@ -17,7 +17,6 @@ static void alloc_all_space(void)
 	}
 }
 
-
 static const char ok[] = "ok\n";
 void entry(void)
 {

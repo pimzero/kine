@@ -52,7 +52,8 @@ struct k_state_t k_state = {
 	.render_state = &render_state_default,
 };
 
-static void init_k_state_t(struct k_state_t *state) {
+static void init_k_state_t(struct k_state_t *state)
+{
 	for (size_t i = 0; i < ARRSZE(state->fds); i++)
 		state->fds[i] = -1;
 }
@@ -65,7 +66,8 @@ struct config_t config = {
 	.brk = USER_ESP,
 };
 
-static int seterrno(int val) {
+static int seterrno(int val)
+{
 	if (val == 0)
 		return 0;
 
@@ -73,17 +75,20 @@ static int seterrno(int val) {
 	return -1;
 }
 
-void k_lock(struct k_state_t* k) {
+void k_lock(struct k_state_t *k)
+{
 	if (seterrno(pthread_mutex_lock(&k->lock)))
 		err(1, "pthread_mutex_lock");
 }
 
-void k_unlock(struct k_state_t* k) {
+void k_unlock(struct k_state_t *k)
+{
 	if (seterrno(pthread_mutex_unlock(&k->lock)))
 		err(1, "pthread_mutex_unlock");
 }
 
-uint32_t getms(void) {
+uint32_t getms(void)
+{
 	struct timeval tv;
 	gettimeofday(&tv, NULL);
 
@@ -95,16 +100,18 @@ static void busy_wait_render_state_initialized(void) {
 		;
 }
 
-static void busy_wait_ready_set_palette(struct render_state* r,
-					const palette_t* palette, size_t sze) {
-	(void) r;
+static void busy_wait_ready_set_palette(struct render_state *r,
+					const palette_t *palette, size_t sze)
+{
+	(void)r;
 	busy_wait_render_state_initialized();
 	k_state.render_state->set_palette(k_state.render_state, palette, sze);
 }
 
-static void wait_ready_swap_frontbuffer(struct render_state* r,
-					const framebuffer_t* fb) {
-	(void) r;
+static void wait_ready_swap_frontbuffer(struct render_state *r,
+					const framebuffer_t *fb)
+{
+	(void)r;
 	busy_wait_render_state_initialized();
 	k_state.render_state->swap_frontbuffer(k_state.render_state, fb);
 }
@@ -114,16 +121,19 @@ static struct render_state render_state_default = {
 	.swap_frontbuffer = wait_ready_swap_frontbuffer,
 };
 
-void render_state_set(struct k_state_t* k, struct render_state* render_state) {
+void render_state_set(struct k_state_t *k, struct render_state *render_state)
+{
 	render_state = render_state ?: &render_state_default;
 	__atomic_store_n(&k->render_state, render_state, __ATOMIC_RELAXED);
 }
 
-static int modify_ldt(int func, struct user_desc* ptr, unsigned long count) {
+static int modify_ldt(int func, struct user_desc *ptr, unsigned long count)
+{
 	return syscall(SYS_modify_ldt, func, ptr, count);
 }
 
-static entry_t load_elf(const char* fname) {
+static entry_t load_elf(const char *fname)
+{
 	int fd = open(fname, O_RDONLY);
 	if (fd < 0)
 		err(1, "open");
@@ -177,7 +187,8 @@ static entry_t load_elf(const char* fname) {
 }
 
 static void set_ldt_entry(unsigned nr, unsigned content,
-			  unsigned read_exec_only) {
+			  unsigned read_exec_only)
+{
 	struct user_desc ldt_entry = {
 		.entry_number = nr,
 		.base_addr = config.base,
@@ -191,7 +202,8 @@ static void set_ldt_entry(unsigned nr, unsigned content,
 		err(1, "modify_ldt");
 }
 
-void k_prepare(void) {
+void k_prepare(void)
+{
 	set_ldt_entry(SEGMENT_CODE, 2, 1);
 	set_ldt_entry(SEGMENT_DATA, 0, 0);
 
@@ -231,7 +243,8 @@ void k_start(entry_t entry) {
 	__builtin_unreachable();
 }
 
-static const char* list_modules(const struct module_class* class) {
+static const char *list_modules(const struct module_class *class)
+{
 	const char join[] = ", ";
 
 	size_t n = 0;
@@ -251,7 +264,8 @@ static const char* list_modules(const struct module_class* class) {
 	return list;
 }
 
-static uint32_t parse_u32_or_die(const char* str) {
+static uint32_t parse_u32_or_die(const char *str)
+{
 	char *endptr = NULL;
 	errno = 0;
 	long long r = strtoll(str, &endptr, 0);
@@ -267,7 +281,8 @@ static uint32_t parse_u32_or_die(const char* str) {
 	return r;
 }
 
-static void help(const char* argv0) {
+static void help(const char *argv0)
+{
 	fprintf(stderr,
 	"Usage: %s [arguments] /path/to/rom\n"
 	"\n"
@@ -287,7 +302,8 @@ static void help(const char* argv0) {
 	list_modules(&module_renderer), module_renderer.names[0]);
 }
 
-static void* render_thread(void *data) {
+static void *render_thread(void *data)
+{
 	renderer_t renderer = data;
 
 	sigset_t sigset;
@@ -300,7 +316,8 @@ static void* render_thread(void *data) {
 	return renderer(&k_state);
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv)
+{
 	int opt;
 
 	renderer_t renderer = *module_renderer_get(0);
@@ -333,7 +350,7 @@ int main(int argc, char** argv) {
 			config.k_on_main_thread = 1;
 			break;
 		case 'r': {
-			const renderer_t* found = module_renderer_find(optarg);
+			const renderer_t *found = module_renderer_find(optarg);
 			if (!found) {
 				warnx("Invalid renderer \"%s\"", optarg);
 				help(argv[0]);
@@ -346,7 +363,7 @@ int main(int argc, char** argv) {
 			config.coredump = 1;
 			break;
 		case 'M': {
-			const k_thread_t* found = module_mode_find(optarg);
+			const k_thread_t *found = module_mode_find(optarg);
 			if (!found) {
 				warnx("Invalid mode \"%s\"", optarg);
 				help(argv[0]);

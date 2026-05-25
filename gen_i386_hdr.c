@@ -12,28 +12,34 @@
 
 #define IS_SIGNED(Val) ((typeof(Val))(-1) < 0)
 
-#define FIELD(Member) do { \
-	assert(offset <= offsetof(typeof(val), Member)); \
-	offset = offsetof(typeof(val), Member); \
-	printf("\t%sint%d_t " #Member ";\n", IS_SIGNED(val.Member) ? "" : "u", \
-	       sizeof(val.Member) * CHAR_BIT); \
-} while (0)
+#define FIELD(Member)                                            \
+	do {                                                     \
+		assert(offset <= offsetof(typeof(val), Member)); \
+		offset = offsetof(typeof(val), Member);          \
+		printf("\t%sint%d_t " #Member ";\n",             \
+		       IS_SIGNED(val.Member) ? "" : "u",         \
+		       sizeof(val.Member) * CHAR_BIT);           \
+	} while (0)
 
-#define FIELD_T(Type, Member) do { \
-	assert(offset <= offsetof(typeof(val), Member)); \
-	offset = offsetof(typeof(val), Member); \
-	assert(__builtin_types_compatible_p(typeof(val.Member), Type)); \
-	printf("\t" #Type "_i386 " #Member ";\n"); \
-} while (0)
+#define FIELD_T(Type, Member)                                           \
+	do {                                                            \
+		assert(offset <= offsetof(typeof(val), Member));        \
+		offset = offsetof(typeof(val), Member);                 \
+		assert(__builtin_types_compatible_p(typeof(val.Member), \
+						    Type));             \
+		printf("\t" #Type "_i386 " #Member ";\n");              \
+	} while (0)
 
-#define STRUCT(Type, Fields) do {\
-	struct Type val; \
-	unsigned offset = 0; \
-	printf("struct " #Type "_i386 {\n"); \
-	Fields \
-	printf("};\n"); \
-	printf("_Static_assert(sizeof(struct " #Type "_i386) == %d, "");\n\n", sizeof(val)); \
-} while (0)
+#define STRUCT(Type, Fields)                                                  \
+	do {                                                                  \
+		struct Type val;                                              \
+		unsigned offset = 0;                                          \
+		printf("struct " #Type "_i386 {\n");                          \
+		Fields printf("};\n");                                        \
+		printf("_Static_assert(sizeof(struct " #Type "_i386) == %d, " \
+		       ");\n\n",                                              \
+		       sizeof(val));                                          \
+	} while (0)
 
 static void do_user_regs_struct(void)
 {
@@ -89,7 +95,8 @@ static void do_timeval(void)
 	      );
 }
 
-int main() {
+int main()
+{
 	printf("#ifndef I386_GEN_H\n"
 	       "#define I386_GEN_H\n"
 	       "\n"

@@ -16,7 +16,8 @@
 
 #define ELF_NOTE_CORE "CORE"
 
-static void *memrchr_inv(const void *s, int c, size_t n) {
+static void *memrchr_inv(const void *s, int c, size_t n)
+{
 	const char *ptr = s;
 	while (n && ptr[n - 1] == c)
 		--n;
@@ -24,7 +25,8 @@ static void *memrchr_inv(const void *s, int c, size_t n) {
 	return (void *)&ptr[n];
 }
 
-static const char* coredump_name(void) {
+static const char *coredump_name(void)
+{
 	static char out[128];
 
 	snprintf(out, sizeof(out), "kine.%d.dump", getpid());
@@ -32,9 +34,11 @@ static const char* coredump_name(void) {
 	return out;
 }
 
-void coredump_write(const struct user_regs_struct_i386 *regs) {
-	const char* last_set_byte = memrchr_inv((void*)config.base, 0, config.limit);
-	size_t filesz = last_set_byte - (const char*)config.base;
+void coredump_write(const struct user_regs_struct_i386 *regs)
+{
+	const char *last_set_byte =
+		memrchr_inv((void *)config.base, 0, config.limit);
+	size_t filesz = last_set_byte - (const char *)config.base;
 
 	int fd = open(coredump_name(), O_CREAT|O_WRONLY, 0644);
 	if (fd < 0)
@@ -112,7 +116,7 @@ void coredump_write(const struct user_regs_struct_i386 *regs) {
 	if (lseek(fd, coredump.phdrs[PHDR_LOAD].p_offset, SEEK_SET) < 0)
 		err(1, "lseek");
 
-	if (write(fd, (void*)config.base, filesz) < 0)
+	if (write(fd, (void *)config.base, filesz) < 0)
 		err(1, "write");
 
 	close(fd);

@@ -12,23 +12,29 @@
 
 static int ptrace_interrupted;
 
-static void ptrace_sa_handler(int signum) {
+static void ptrace_sa_handler(int signum)
+{
 	ptrace_interrupted = signum;
 }
 
-static void set_interrupt_sighandlers(void (*handler)(int)) {
-	const int sigs[] = { SIGTERM, SIGHUP, SIGINT, SIGQUIT, SIGPIPE, };
+static void set_interrupt_sighandlers(void (*handler)(int))
+{
+	const int sigs[] = {
+		SIGTERM, SIGHUP, SIGINT, SIGQUIT, SIGPIPE,
+	};
 
 	for (size_t i = 0; i < ARRSZE(sigs); i++) {
-		if (sigaction(sigs[i], &(struct sigaction) {
-				.sa_handler = handler,
-			      }, NULL) < 0)
+		if (sigaction(sigs[i],
+			      &(struct sigaction){
+				      .sa_handler = handler,
+			      },
+			      NULL) < 0)
 			err(1, "sigaction");
 	}
 }
 
-__attribute((noreturn))
-static void ptrace_interrupted_reraise(void) {
+__attribute((noreturn)) static void ptrace_interrupted_reraise(void)
+{
 	set_interrupt_sighandlers(SIG_DFL);
 
 	raise(ptrace_interrupted);
@@ -44,7 +50,8 @@ static void ptrace_interrupted_reraise(void) {
 #define eorig_ax orig_eax
 #endif
 
-static void handle_syscall(pid_t pid) {
+static void handle_syscall(pid_t pid)
+{
 	struct user_regs_struct regs = {};
 	if (ptrace(PTRACE_GETREGS, pid, NULL, &regs) < 0)
 		err(1, "ptrace(GETREGS)");
@@ -55,32 +62,34 @@ static void handle_syscall(pid_t pid) {
 		err(1, "ptrace(SETREGS)");
 }
 
-static void handle_exception(pid_t pid, int sig) {
+static void handle_exception(pid_t pid, int sig)
+{
 	if (config.coredump) {
 		struct user_regs_struct regs = {};
 		if (ptrace(PTRACE_GETREGS, pid, NULL, &regs) < 0)
 			err(1, "ptrace(GETREGS)");
 
-		coredump_write(&(struct user_regs_struct_i386) {
-				.ebx = REG(bx),
-				.ecx = REG(cx),
-				.edx = REG(dx),
-				.esi = REG(si),
-				.edi = REG(di),
-				.ebp = REG(bp),
-				.eax = REG(ax),
-				.eip = REG(ip),
-				.esp = REG(sp),
-				.eflags = regs.eflags,
-				.orig_eax = REG(orig_ax),
-				});
+		coredump_write(&(struct user_regs_struct_i386){
+			.ebx = REG(bx),
+			.ecx = REG(cx),
+			.edx = REG(dx),
+			.esi = REG(si),
+			.edi = REG(di),
+			.ebp = REG(bp),
+			.eax = REG(ax),
+			.eip = REG(ip),
+			.esp = REG(sp),
+			.eflags = regs.eflags,
+			.orig_eax = REG(orig_ax),
+		});
 	}
 	fprintf(stderr, "Fatal signal %d\n", sig);
 	if (kill(pid, 9) < 0)
 		err(1, "kill");
 }
 
-static void* k_thread_ptrace(void* entry) {
+static void *k_thread_ptrace(void *entry)
+{
 	k_prepare();
 
 	pid_t pid = fork();

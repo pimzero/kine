@@ -30,14 +30,16 @@
 
 #include "kstd.h"
 
-static void* get_user(uint32_t ptr) {
+static void *get_user(uint32_t ptr)
+{
 	if (ptr >= config.limit)
 		return NULL;
-	return (void*)(ptr + config.base);
+	return (void *)(ptr + config.base);
 }
 
-static char* str_from_user(uint32_t ptr) {
-	char* str = get_user(ptr);
+static char *str_from_user(uint32_t ptr)
+{
+	char *str = get_user(ptr);
 	if (!str)
 		return NULL;
 
@@ -47,7 +49,8 @@ static char* str_from_user(uint32_t ptr) {
 	return str;
 }
 
-static void* mem_from_user(uint32_t ptr, size_t size) {
+static void *mem_from_user(uint32_t ptr, size_t size)
+{
 	if (ptr + size > config.limit)
 		return NULL;
 
@@ -77,20 +80,25 @@ static int32_t errno2k(int32_t r)
 	}
 }
 
-#define ON_FD(Fn, Fd, ...) ({ \
-		(Fd) > ARRSZE(k_state.fds) ? -KEBADF : \
-		errno2k((Fn)(k_state.fds[(Fd)] __VA_OPT__(,) __VA_ARGS__)); \
+#define ON_FD(Fn, Fd, ...)                                            \
+	({                                                            \
+		(Fd) > ARRSZE(k_state.fds) ?                          \
+			-KEBADF :                                     \
+			errno2k((Fn)(k_state.fds[(Fd)] __VA_OPT__(, ) \
+					     __VA_ARGS__));           \
 	})
 
-static int32_t sys_WRITE(uint32_t buf, uint32_t len) {
-	void* buf_ptr = mem_from_user(buf, len);
+static int32_t sys_WRITE(uint32_t buf, uint32_t len)
+{
+	void *buf_ptr = mem_from_user(buf, len);
 	if (!buf_ptr)
 		return -KEINVAL;
 
 	return errno2k(write(1, buf_ptr, len));
 }
 
-static int32_t sys_SETVIDEO(int32_t type) {
+static int32_t sys_SETVIDEO(int32_t type)
+{
 	K_LOCK_SCOPPED(lock, &k_state);
 
 	switch (type) {
@@ -104,12 +112,14 @@ static int32_t sys_SETVIDEO(int32_t type) {
 }
 
 static long linux_openat2(int dirfd, const char *path, struct open_how *how,
-			  size_t size) {
+			  size_t size)
+{
 	return syscall(SYS_openat2, dirfd, path, how, size);
 }
 
-static int32_t sys_OPEN(uint32_t pathname, uint32_t flags) {
-	(void) flags;
+static int32_t sys_OPEN(uint32_t pathname, uint32_t flags)
+{
+	(void)flags;
 
 	int *fd_orig = NULL;
 	for (size_t i = 0; i < ARRSZE(k_state.fds); i++) {
@@ -121,7 +131,7 @@ static int32_t sys_OPEN(uint32_t pathname, uint32_t flags) {
 	if (!fd_orig)
 		return -KENOMEM;
 
-	char* pathname_ptr = str_from_user(pathname);
+	char *pathname_ptr = str_from_user(pathname);
 	if (!pathname_ptr)
 		return -KEINVAL;
 
@@ -130,7 +140,8 @@ static int32_t sys_OPEN(uint32_t pathname, uint32_t flags) {
 		.mode = O_RDONLY,
 	};
 
-	int ret = errno2k(linux_openat2(config.root, pathname_ptr, &how, sizeof(how)));
+	int ret = errno2k(linux_openat2(config.root, pathname_ptr, &how,
+					sizeof(how)));
 	if (ret < 0)
 		return ret;
 
@@ -144,7 +155,8 @@ static int32_t sys_OPEN(uint32_t pathname, uint32_t flags) {
 	return fd_orig - k_state.fds;
 }
 
-static int32_t sys_CLOSE(uint32_t fd) {
+static int32_t sys_CLOSE(uint32_t fd)
+{
 	int32_t ret = ON_FD(close, fd);
 	if (ret >= 0)
 		k_state.fds[fd] = -1;
@@ -152,8 +164,9 @@ static int32_t sys_CLOSE(uint32_t fd) {
 	return ret;
 }
 
-static int32_t sys_SWAP_FRONTBUFFER(uint32_t buffer) {
-	const framebuffer_t* fb = mem_from_user(buffer, sizeof(*fb));
+static int32_t sys_SWAP_FRONTBUFFER(uint32_t buffer)
+{
+	const framebuffer_t *fb = mem_from_user(buffer, sizeof(*fb));
 	if (!fb)
 		return -KEINVAL;
 
@@ -162,15 +175,17 @@ static int32_t sys_SWAP_FRONTBUFFER(uint32_t buffer) {
 	return 0;
 }
 
-static int32_t sys_READ(uint32_t fd, uint32_t buf, uint32_t count) {
-	void* buf_ptr = mem_from_user(buf, count);
+static int32_t sys_READ(uint32_t fd, uint32_t buf, uint32_t count)
+{
+	void *buf_ptr = mem_from_user(buf, count);
 	if (!buf_ptr)
 		return -KEINVAL;
 
 	return ON_FD(read, fd, buf_ptr, count);
 }
 
-static int32_t sys_SBRK(int32_t inc) {
+static int32_t sys_SBRK(int32_t inc)
+{
 	int32_t new_brk = (int32_t)k_state.brk + inc;
 
 	if (new_brk < 0 || new_brk >= (int32_t)config.limit)
@@ -182,11 +197,13 @@ static int32_t sys_SBRK(int32_t inc) {
 	return out;
 }
 
-static int32_t sys_GETTICK(void) {
+static int32_t sys_GETTICK(void)
+{
 	return getms() - k_state.starttime;
 }
 
-static int32_t sys_SEEK(uint32_t fd, int32_t off, int32_t whence) {
+static int32_t sys_SEEK(uint32_t fd, int32_t off, int32_t whence)
+{
 	switch (whence) {
 	case KSEEK_SET:
 		whence = SEEK_SET;
@@ -204,14 +221,16 @@ static int32_t sys_SEEK(uint32_t fd, int32_t off, int32_t whence) {
 	return ON_FD(lseek, fd, off, whence);
 }
 
-static int32_t sys_GETKEY(void) {
+static int32_t sys_GETKEY(void)
+{
 	K_LOCK_SCOPPED(lock, &k_state);
 
 	return k_state.key;
 }
 
-static int32_t sys_SETPALETTE(uint32_t palette, uint32_t sze) {
-	const palette_t* p = mem_from_user(palette, sizeof(*p));
+static int32_t sys_SETPALETTE(uint32_t palette, uint32_t sze)
+{
+	const palette_t *p = mem_from_user(palette, sizeof(*p));
 	if (!p)
 		return -KEINVAL;
 
@@ -225,8 +244,9 @@ static int32_t sys_SETPALETTE(uint32_t palette, uint32_t sze) {
 	return 0;
 }
 
-static int32_t sys_READKEY(uint32_t uaddr) {
-	struct key_event* ev = mem_from_user(uaddr, sizeof(*ev));
+static int32_t sys_READKEY(uint32_t uaddr)
+{
+	struct key_event *ev = mem_from_user(uaddr, sizeof(*ev));
 	if (!ev)
 		return -KEINVAL;
 
@@ -253,10 +273,15 @@ typedef union {
 
 static const struct {
 	syscall_t f;
-	const char* name;
-	const char* fmt;
+	const char *name;
+	const char *fmt;
 } syscalls[] = {
-#define SYS(T, Name, Fmt) [KSYSCALL_##Name] = { .f.T = sys_##Name, .name = #Name, .fmt = Fmt, }
+#define SYS(T, Name, Fmt)          \
+	[KSYSCALL_##Name] = {      \
+		.f.T = sys_##Name, \
+		.name = #Name,     \
+		.fmt = Fmt,        \
+	}
 	SYS(uu,  WRITE, "%S, %u"),
 	SYS(s,   SBRK, "%d"),
 	SYS(v,   GETKEY, ""),
@@ -274,29 +299,31 @@ static const struct {
 #undef SYS
 };
 
-static int print_string_arg(FILE* f, const struct printf_info* info,
-			    const void* const* args) {
-	(void) info;
-	uint32_t arg = *(uint32_t*)(args[0]);
-	const char* s = str_from_user(arg);
+static int print_string_arg(FILE *f, const struct printf_info *info,
+			    const void *const *args)
+{
+	(void)info;
+	uint32_t arg = *(uint32_t *)(args[0]);
+	const char *s = str_from_user(arg);
 	if (s)
 		return fprintf(f, "\"%s\"", s);
 	else
 		return fprintf(f, "%#x", arg);
 }
 
-__attribute((constructor))
-static void syscalls_init_strace(void) {
+__attribute((constructor)) static void syscalls_init_strace(void)
+{
 	if (register_printf_specifier('S', print_string_arg, NULL) < 0)
 		err(1, "register_printf_specifier");
 }
 
 static void syscall_trace(uint32_t nr, uint32_t arg1, uint32_t arg2,
-			  uint32_t arg3, int32_t ret) {
+			  uint32_t arg3, int32_t ret)
+{
 	fprintf(stderr, "%s(", syscalls[nr].name);
 	fprintf(stderr, syscalls[nr].fmt, arg1, arg2, arg3);
 
-	static const char* errnos[] = {
+	static const char *errnos[] = {
 #define X(X) [K##X] = #X
 		X(ENOMEM),
 		X(ENOENT),
@@ -313,7 +340,9 @@ static void syscall_trace(uint32_t nr, uint32_t arg1, uint32_t arg2,
 		fprintf(stderr, ") = %d\n", ret);
 }
 
-int32_t syscall_dispatch(uint32_t nr, uint32_t arg1, uint32_t arg2, uint32_t arg3) {
+int32_t syscall_dispatch(uint32_t nr, uint32_t arg1, uint32_t arg2,
+			 uint32_t arg3)
+{
 	if (nr > ARRSZE(syscalls) || !syscalls[nr].f.uuu) {
 		fprintf(stderr, "unsupported syscall: %d\n", nr);
 		return -KENOSYS;

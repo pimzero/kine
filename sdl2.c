@@ -30,26 +30,27 @@
 struct render_state_sdl {
 	struct render_state base;
 	SDL_Color palette[256];
-	SDL_Palette* sdl_palette;
-	SDL_Renderer* renderer;
+	SDL_Palette *sdl_palette;
+	SDL_Renderer *renderer;
 	uint32_t sdl_ev_swap_frontbuffer;
 	framebuffer_t framebuffer;
 };
 
-static SDL_Renderer* init_window(void) {
+static SDL_Renderer *init_window(void)
+{
 	if (SDL(SetHint)(SDL_HINT_NO_SIGNAL_HANDLERS, "1") == SDL_FALSE)
 		warnx("SDL_SetHint(NO_SIGNAL_HANDLERS) failed");
 
 	if (SDL(Init)(SDL_INIT_VIDEO) < 0)
 		errx(1, "SDL_Init: %s", SDL(GetError)());
 
-	SDL_Window* window = SDL(CreateWindow)("kine", SDL_WINDOWPOS_UNDEFINED,
-					      SDL_WINDOWPOS_UNDEFINED, 640, 400,
-					      SDL_WINDOW_OPENGL);
+	SDL_Window *window = SDL(CreateWindow)("kine", SDL_WINDOWPOS_UNDEFINED,
+					       SDL_WINDOWPOS_UNDEFINED, 640,
+					       400, SDL_WINDOW_OPENGL);
 	if (!window)
 		errx(1, "SDL_CreateWindow: %s", SDL(GetError)());
 
-	SDL_Renderer* renderer = SDL(CreateRenderer)(window, -1, 0);
+	SDL_Renderer *renderer = SDL(CreateRenderer)(window, -1, 0);
 	if (!renderer)
 		errx(1, "SDL_CreateRenderer: %s", SDL(GetError)());
 
@@ -62,7 +63,8 @@ static const unsigned char keymap[] = {
 #undef X
 };
 
-static int32_t scancode(SDL_Scancode orig) {
+static int32_t scancode(SDL_Scancode orig)
+{
 	int32_t out = -1;
 	if (orig <= ARRSZE(keymap) && keymap[orig])
 		out = keymap[orig];
@@ -70,10 +72,10 @@ static int32_t scancode(SDL_Scancode orig) {
 	return out;
 }
 
-static void update_renderer(struct render_state_sdl* r) {
-	SDL_Surface* surface =
-		SDL(CreateRGBSurfaceFrom)(r->framebuffer, 320, 200, 8, 320, 0,
-					  0, 0, 0);
+static void update_renderer(struct render_state_sdl *r)
+{
+	SDL_Surface *surface = SDL(CreateRGBSurfaceFrom)(
+		r->framebuffer, 320, 200, 8, 320, 0, 0, 0, 0);
 	if (!surface)
 		errx(1, "SDL_CreateRGBSurfaceFrom: %s", SDL(GetError)());
 
@@ -83,7 +85,7 @@ static void update_renderer(struct render_state_sdl* r) {
 	if (SDL(SetSurfacePalette)(surface, r->sdl_palette))
 		errx(1, "SDL_SetSurfacePalette: %s", SDL(GetError)());
 
-	SDL_Texture* texture =
+	SDL_Texture *texture =
 		SDL(CreateTextureFromSurface)(r->renderer, surface);
 	if (!texture)
 		errx(1, "SDL_CreateTextureFromSurface: %s", SDL(GetError)());
@@ -93,7 +95,8 @@ static void update_renderer(struct render_state_sdl* r) {
 	SDL(RenderPresent)(r->renderer);
 }
 
-static void update_inputs(struct k_state_t* k, struct render_state_sdl* r) {
+static void update_inputs(struct k_state_t *k, struct render_state_sdl *r)
+{
 	SDL_Event event = {};
 
 	if (!SDL(WaitEvent)(&event))
@@ -108,8 +111,8 @@ static void update_inputs(struct k_state_t* k, struct render_state_sdl* r) {
 	} else if (event.type == SDL_KEYUP) {
 		if (k->key == scancode(event.key.keysym.scancode))
 			k->key = -1;
-		ring_push(&k->keys, scancode(event.key.keysym.scancode) |
-			  FLAG_KEY_RELEASED);
+		ring_push(&k->keys,
+			  scancode(event.key.keysym.scancode) | FLAG_KEY_RELEASED);
 	}
 	k_unlock(k);
 
@@ -117,9 +120,10 @@ static void update_inputs(struct k_state_t* k, struct render_state_sdl* r) {
 		update_renderer(r);
 }
 
-static void set_palette(struct render_state* base, const palette_t* palette,
-			size_t sze) {
-	struct render_state_sdl* r =
+static void set_palette(struct render_state *base, const palette_t *palette,
+			size_t sze)
+{
+	struct render_state_sdl *r =
 		container_of(base, struct render_state_sdl, base);
 
 	for (size_t i = 0; i < sze; i++) {
@@ -129,15 +133,17 @@ static void set_palette(struct render_state* base, const palette_t* palette,
 	}
 }
 
-static void swap_frontbuffer(struct render_state* base, const framebuffer_t* fb) {
-	struct render_state_sdl* r =
+static void swap_frontbuffer(struct render_state *base, const framebuffer_t *fb)
+{
+	struct render_state_sdl *r =
 		container_of(base, struct render_state_sdl, base);
 	memcpy(&r->framebuffer, fb, sizeof(r->framebuffer));
 	if (SDL(PushEvent)(&(SDL_Event){ .type = r->sdl_ev_swap_frontbuffer }) < 0)
 		warnx("SDL_PushEvent: %s", SDL(GetError)());
 }
 
-static void* render_thread_sdl2(struct k_state_t* k) {
+static void *render_thread_sdl2(struct k_state_t *k)
+{
 	struct render_state_sdl r = {
 		.base = {
 			.set_palette = set_palette,

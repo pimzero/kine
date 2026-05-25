@@ -17,7 +17,7 @@
 #define PR_SYS_DISPATCH_ON 1
 #endif
 #ifndef HWCAP2_FSGSBASE
-#define HWCAP2_FSGSBASE        (1 << 1)
+#define HWCAP2_FSGSBASE (1 << 1)
 #endif
 #ifndef SYS_USER_DISPATCH
 #define SYS_USER_DISPATCH 2
@@ -26,16 +26,19 @@
 #if __x86_64__
 static unsigned long k_thread_fs;
 
-static int arch_prctl(int op, unsigned long* addr) {
+static int arch_prctl(int op, unsigned long *addr)
+{
 	return syscall(SYS_arch_prctl, op, addr);
 }
 
-static int supports_fsgsbase(void) {
+static int supports_fsgsbase(void)
+{
 	return !!(getauxval(AT_HWCAP2) & HWCAP2_FSGSBASE);
 }
 #endif
 
-static uint16_t get_cs(const ucontext_t* ctx) {
+static uint16_t get_cs(const ucontext_t *ctx)
+{
 #if __x86_64__
 	return ctx->uc_mcontext.gregs[REG_CSGSFS] & 0xffff;
 #else
@@ -97,7 +100,8 @@ MAKE_SIGNAL_HANDLERS_ASM(handler_asm_fsgsbase,
 "mov %rsi, %rdi\n\t"
 "mov %rdx, %rsi\n\t");
 
-#define GET_SIGACTION(Kind) (supports_fsgsbase() ? Kind##_handler_asm_fsgsbase : Kind##_handler_asm)
+#define GET_SIGACTION(Kind) \
+	(supports_fsgsbase() ? Kind##_handler_asm_fsgsbase : Kind##_handler_asm)
 
 #else
 
@@ -114,7 +118,8 @@ MAKE_SIGNAL_HANDLERS_ASM(handler_asm,
 
 #endif
 
-static void set_sigaction_on_stack(int sig, void (*f)(int, siginfo_t*, void*)) {
+static void set_sigaction_on_stack(int sig, void (*f)(int, siginfo_t *, void *))
+{
 	struct sigaction sa = {
 		.sa_sigaction = f,
 		.sa_flags = SA_SIGINFO|SA_ONSTACK,
@@ -123,7 +128,8 @@ static void set_sigaction_on_stack(int sig, void (*f)(int, siginfo_t*, void*)) {
 		err(1, "sigaction");
 }
 
-static void k_setup_sighandler(void) {
+static void k_setup_sighandler(void)
+{
 	stack_t ss = {
 		.ss_sp = malloc(SIGSTKSZ),
 		.ss_size = SIGSTKSZ,
@@ -138,8 +144,9 @@ static void k_setup_sighandler(void) {
 	set_sigaction_on_stack(SIGSYS, GET_SIGACTION(sigsys));
 }
 
-__attribute__ ((used))
-static void sigsys_handler(siginfo_t* siginfo, struct ucontext_t* ctx) {
+__attribute__((used)) static void sigsys_handler(siginfo_t *siginfo,
+						 struct ucontext_t *ctx)
+{
 	if (siginfo->si_code != SYS_USER_DISPATCH)
 		return;
 
@@ -148,21 +155,21 @@ static void sigsys_handler(siginfo_t* siginfo, struct ucontext_t* ctx) {
 #else
 #define REG(X) REG_E##X
 #endif
-	ctx->uc_mcontext.gregs[REG(AX)] =
-		syscall_dispatch(siginfo->si_syscall,
-		ctx->uc_mcontext.gregs[REG(BX)],
+	ctx->uc_mcontext.gregs[REG(AX)] = syscall_dispatch(
+		siginfo->si_syscall, ctx->uc_mcontext.gregs[REG(BX)],
 		ctx->uc_mcontext.gregs[REG(CX)],
-		ctx->uc_mcontext.gregs[REG(DX)]
-	);
+		ctx->uc_mcontext.gregs[REG(DX)]);
 }
 
-static int set_syscall_user_dispatch(void* start, void* end) {
+static int set_syscall_user_dispatch(void *start, void *end)
+{
 	return prctl(PR_SET_SYSCALL_USER_DISPATCH, PR_SYS_DISPATCH_ON, start,
 		     end, NULL);
 }
 
-__attribute__ ((used))
-static void coredump_handler(siginfo_t *si, void *ucontext) {
+__attribute__((used)) static void coredump_handler(siginfo_t *si,
+						   void *ucontext)
+{
 	ucontext_t *ctx = ucontext;
 
 	if (get_cs(ctx) != SEG_REG(CODE, LDT, 3)) {
@@ -195,16 +202,20 @@ static void coredump_handler(siginfo_t *si, void *ucontext) {
 	_Exit(1);
 }
 
-static void setup_coredump_sighandlers(void) {
-	const int sigs[] = { SIGBUS, SIGFPE, SIGILL, SIGSEGV, SIGTRAP, };
+static void setup_coredump_sighandlers(void)
+{
+	const int sigs[] = {
+		SIGBUS, SIGFPE, SIGILL, SIGSEGV, SIGTRAP,
+	};
 
 	for (size_t i = 0; i < ARRSZE(sigs); i++)
 		set_sigaction_on_stack(sigs[i], GET_SIGACTION(coredump));
 }
 
-static void* k_thread_syscall_user_dispatch(void* entry) {
-	if (set_syscall_user_dispatch((char*)config.base + config.limit,
-				      (void*)~(0x1ULL<<63)) < 0) {
+static void *k_thread_syscall_user_dispatch(void *entry)
+{
+	if (set_syscall_user_dispatch((char *)config.base + config.limit,
+				      (void *)~(0x1ULL << 63)) < 0) {
 		warn("set_syscall_user_dispatch");
 		return K_THREAD_FAILED_INIT;
 	}

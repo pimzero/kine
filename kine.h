@@ -39,8 +39,8 @@ typedef uint32_t palette_t[256];
 typedef uint32_t framebuffer_t[320 * 200];
 
 struct render_state {
-	void (*set_palette)(struct render_state*, const palette_t*, size_t);
-	void (*swap_frontbuffer)(struct render_state*, const framebuffer_t*);
+	void (*set_palette)(struct render_state *, const palette_t *, size_t);
+	void (*swap_frontbuffer)(struct render_state *, const framebuffer_t *);
 };
 
 extern const palette_t libvga_default_palette;
@@ -50,7 +50,7 @@ struct k_state_t {
 	int video_mode;
 	int quit;
 	int32_t key;
-	struct render_state* render_state;
+	struct render_state *render_state;
 
 	struct ring keys;
 
@@ -61,7 +61,7 @@ struct k_state_t {
 	int fds[64];
 };
 
-void render_state_set(struct k_state_t* k, struct render_state* render_state);
+void render_state_set(struct k_state_t *k, struct render_state *render_state);
 
 struct config_t {
 	int root;
@@ -71,30 +71,33 @@ struct config_t {
 	union {
 		uint32_t limit;
 		struct {
-			uint32_t __zeros:12;
+			uint32_t _zeros:12;
 			uint32_t limit_as_pages:20;
 		};
 	};
 };
 
-void k_lock(struct k_state_t*);
-void k_unlock(struct k_state_t*);
+void k_lock(struct k_state_t *);
+void k_unlock(struct k_state_t *);
 
-static inline void k_unlock_ref(struct k_state_t** ptr) {
+static inline void k_unlock_ref(struct k_state_t **ptr)
+{
 	k_unlock(*ptr);
 }
 
-#define K_LOCK_SCOPPED(Lck, State) \
-	struct k_state_t *Lck __attribute__((cleanup(k_unlock_ref))) = \
-	({ struct k_state_t *val_ = (State); k_lock(val_); val_; })
+#define K_LOCK_SCOPPED(Lck, State)                                        \
+	struct k_state_t *Lck __attribute__((cleanup(k_unlock_ref))) = ({ \
+		struct k_state_t *val_ = (State);                         \
+		k_lock(val_);                                             \
+		val_;                                                     \
+	})
 
 extern struct config_t config;
 extern struct k_state_t k_state;
 
 typedef void (*entry_t)(void);
 void k_prepare(void);
-__attribute((noreturn))
-void k_start(entry_t entry);
+__attribute((noreturn)) void k_start(entry_t entry);
 
 #define SEGMENT_CODE 1
 #define SEGMENT_DATA 2
@@ -106,7 +109,8 @@ void k_start(entry_t entry);
 #define SEG_REG(Segment, Table, Rpl) \
 	((SEGMENT_##Segment << 3) | SEGMENT_##Table | SEGMENT_RPL##Rpl)
 
-static inline int ring_push(struct ring* rb, uint8_t c) {
+static inline int ring_push(struct ring *rb, uint8_t c)
+{
 	if ((rb->z + 1) % ARRSZE(rb->buf) == rb->a)
 		return -1;
 
@@ -115,7 +119,8 @@ static inline int ring_push(struct ring* rb, uint8_t c) {
 	return 0;
 }
 
-static inline int ring_pop(struct ring* rb, uint8_t* c) {
+static inline int ring_pop(struct ring *rb, uint8_t *c)
+{
 	if ((rb->a + 1) % ARRSZE(rb->buf) == rb->z)
 		return -1;
 
@@ -124,60 +129,70 @@ static inline int ring_pop(struct ring* rb, uint8_t* c) {
 	return 0;
 }
 
-int32_t syscall_dispatch(uint32_t sysnr, uint32_t arg1, uint32_t arg2, uint32_t arg3);
+int32_t syscall_dispatch(uint32_t sysnr, uint32_t arg1, uint32_t arg2,
+			 uint32_t arg3);
 uint32_t getms(void);
 
-# define XCONCAT(X, Y) X##Y
-# define CONCAT(X, Y) XCONCAT(X, Y)
+#define XCONCAT(X, Y) X##Y
+#define CONCAT(X, Y) XCONCAT(X, Y)
 
 #define UNIQUE_ID(Name) CONCAT(Name, __COUNTER__)
 
-#define DEFINE_MODULE(Class, Name, Value) \
-	__attribute__((used, section("module_" #Class "_names"))) \
-	static const char* const UNIQUE_ID(Class##_name) = #Name; \
-	__attribute__((used, section("module_" #Class "_values"))) \
-	static module_##Class##_value_t UNIQUE_ID(Class##_value) = Value; \
+#define DEFINE_MODULE(Class, Name, Value)                                   \
+	__attribute__((used, section("module_" #Class                       \
+				     "_names"))) static const char *const   \
+		UNIQUE_ID(Class##_name) = #Name;                            \
+	__attribute__((used,                                                \
+		       section("module_" #Class                             \
+			       "_values"))) static module_##Class##_value_t \
+		UNIQUE_ID(Class##_value) = Value;
 
 struct module_class {
 	size_t (*size)(void);
-	const char* const* names;
+	const char *const *names;
 };
 
-#define DEFINE_MODULE_CLASS(Class, Type) \
-	typedef Type module_##Class##_value_t; \
-	extern const char* const __start_module_##Class##_names, \
-			 * const __stop_module_##Class##_names;  \
-	extern module_##Class##_value_t __start_module_##Class##_values, \
-					__stop_module_##Class##_values;  \
-	static inline size_t module_##Class##_size(void) { \
-		return &__stop_module_##Class##_names - &__start_module_##Class##_names; \
-	} \
-	static inline module_##Class##_value_t* module_##Class##_get_values(void) { \
-		return &__start_module_##Class##_values; \
-	} \
-	static inline module_##Class##_value_t* module_##Class##_get(size_t i) { \
-		return module_##Class##_get_values() + i; \
-	} \
-	__attribute__((unused)) \
-	static struct module_class module_##Class = { \
-		.size = module_##Class##_size, \
-		.names = &__start_module_##Class##_names, \
-	}; \
-	static inline module_##Class##_value_t* module_##Class##_find(const char* name) { \
-		extern int strcmp(const char *s1, const char *s2); \
-		for (size_t i = 0; i < module_##Class##_size(); i++) \
-			if (!strcmp(name, module_##Class.names[i])) \
-				return module_##Class##_get(i); \
-		return NULL; \
-	} \
+#define DEFINE_MODULE_CLASS(Class, Type)                                       \
+	typedef Type module_##Class##_value_t;                                 \
+	extern const char *const __start_module_##Class##_names,               \
+		*const __stop_module_##Class##_names;                          \
+	extern module_##Class##_value_t __start_module_##Class##_values,       \
+		__stop_module_##Class##_values;                                \
+	static inline size_t module_##Class##_size(void)                       \
+	{                                                                      \
+		return &__stop_module_##Class##_names -                        \
+		       &__start_module_##Class##_names;                        \
+	}                                                                      \
+	static inline module_##Class##_value_t *module_##Class##_get_values(   \
+		void)                                                          \
+	{                                                                      \
+		return &__start_module_##Class##_values;                       \
+	}                                                                      \
+	static inline module_##Class##_value_t *module_##Class##_get(size_t i) \
+	{                                                                      \
+		return module_##Class##_get_values() + i;                      \
+	}                                                                      \
+	__attribute__((unused)) static struct module_class module_##Class = {  \
+		.size = module_##Class##_size,                                 \
+		.names = &__start_module_##Class##_names,                      \
+	};                                                                     \
+	static inline module_##Class##_value_t *module_##Class##_find(         \
+		const char *name)                                              \
+	{                                                                      \
+		extern int strcmp(const char *s1, const char *s2);             \
+		for (size_t i = 0; i < module_##Class##_size(); i++)           \
+			if (!strcmp(name, module_##Class.names[i]))            \
+				return module_##Class##_get(i);                \
+		return NULL;                                                   \
+	}
 
-typedef void* (*renderer_t)(struct k_state_t*);
+typedef void *(*renderer_t)(struct k_state_t *);
 DEFINE_MODULE_CLASS(renderer, const renderer_t);
 #define DEFINE_RENDERER(Name, Value) DEFINE_MODULE(renderer, Name, Value)
 
-#define K_THREAD_FAILED_INIT ((void*)1)
+#define K_THREAD_FAILED_INIT ((void *)1)
 
-typedef void* (*k_thread_t)(void* entry);
+typedef void *(*k_thread_t)(void *entry);
 DEFINE_MODULE_CLASS(mode, const k_thread_t);
 #define DEFINE_MODE(Name, Value) DEFINE_MODULE(mode, Name, Value)
 
