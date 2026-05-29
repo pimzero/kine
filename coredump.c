@@ -89,11 +89,11 @@ void coredump_write(const struct user_regs_struct_i386 *regs)
 			},
 			[PHDR_LOAD] = {
 				.p_type = PT_LOAD,
-				.p_offset = ALIGN_UP(sizeof(coredump), PAGE_SIZE),
+				.p_offset = ALIGN_UP(sizeof(coredump), getpagesize()),
 				.p_filesz = filesz,
 				.p_memsz = config.limit,
 				.p_flags = PF_R|PF_W|PF_X,
-				.p_align = PAGE_SIZE,
+				.p_align = getpagesize(),
 			},
 		},
 		.notes = {
