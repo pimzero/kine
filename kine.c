@@ -210,8 +210,22 @@ void k_prepare(void)
 	k_state.starttime = getms();
 }
 
+#ifdef __x86_64__
+__attribute__((used))
+static struct {
+	uint32_t eip;
+	uint16_t cs;
+} ljmp_target;
+#endif
+
 __attribute((noreturn))
-void k_start(entry_t entry) {
+void k_start(entry_t entry)
+{
+#ifdef __x86_64__
+	ljmp_target.eip = (uint32_t)(uintptr_t)entry;
+	ljmp_target.cs = SEG_REG(CODE, LDT, 3);
+#endif
+
 	__asm__ volatile(
 	"mov $" XSTR(SEG_REG(DATA, LDT, 3)) ", %%ebx\n\t"
 	"mov %%bx, %%ss\n\t"
@@ -221,8 +235,10 @@ void k_start(entry_t entry) {
 	"mov %%bx, %%gs\n\t"
 
 	"mov %[sp], %%esp\n\t"
+#ifndef __x86_64__
 	"push $" XSTR(SEG_REG(CODE, LDT, 3)) "\n\t"
 	"push %[entry]\n\t"
+#endif
 
 	"xor %%eax, %%eax\n\t"
 	"xor %%ebx, %%ebx\n\t"
@@ -232,12 +248,15 @@ void k_start(entry_t entry) {
 	"xor %%edi, %%edi\n\t"
 	"xor %%ebp, %%ebp\n\t"
 #ifdef __x86_64__
-	"lretq\n\t"
+	"ljmpl *ljmp_target(%%rip)\n\t"
 #else
 	"lret\n\t"
 #endif
-	: /* outputs */
-	: [entry]"r"(entry), [sp]"r"((uint32_t)config.sp)
+	: :
+#ifndef __x86_64__
+	[entry]"r"(entry),
+#endif
+	[sp]"r"((uint32_t)config.sp)
 	: "memory", "ebx");
 
 	__builtin_unreachable();
